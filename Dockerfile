@@ -9,6 +9,13 @@ RUN apt-get update && apt-get install -y \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
+# Bypass tar ownership extraction errors in restricted container runtimes
+RUN TAR_PATH=$(which tar) && \
+    mv "$TAR_PATH" "${TAR_PATH}.original" && \
+    echo '#!/bin/sh' > "$TAR_PATH" && \
+    echo 'exec '"${TAR_PATH}"'.original --no-same-owner "$@"' >> "$TAR_PATH" && \
+    chmod +x "$TAR_PATH"
+
 # Clone the official stable Flutter SDK
 RUN git clone https://github.com/flutter/flutter.git -b stable /usr/local/flutter
 
