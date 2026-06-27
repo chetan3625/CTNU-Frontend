@@ -11,9 +11,7 @@ class AuthPage extends StatefulWidget {
   State<AuthPage> createState() => _AuthPageState();
 }
 
-class _AuthPageState extends State<AuthPage>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _AuthPageState extends State<AuthPage> {
   final _loginFormKey = GlobalKey<FormState>();
   final _registerFormKey = GlobalKey<FormState>();
   
@@ -24,25 +22,12 @@ class _AuthPageState extends State<AuthPage>
   final _regEmail = TextEditingController();
   final _regPassword = TextEditingController();
   
+  bool _isLogin = true;
   bool _isLoading = false;
   String? _errorMessage;
 
   @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() {
-      if (_errorMessage != null) {
-        setState(() {
-          _errorMessage = null;
-        });
-      }
-    });
-  }
-
-  @override
   void dispose() {
-    _tabController.dispose();
     _loginUsername.dispose();
     _loginPassword.dispose();
     _regUsername.dispose();
@@ -125,6 +110,7 @@ class _AuthPageState extends State<AuthPage>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -138,7 +124,7 @@ class _AuthPageState extends State<AuthPage>
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withOpacity(0.1),
+                    color: theme.colorScheme.primary.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -164,7 +150,7 @@ class _AuthPageState extends State<AuthPage>
                 ),
                 const SizedBox(height: 32),
 
-                // Card for login/register form
+                // Responsive Card for login/register form
                 Card(
                   elevation: 8,
                   shape: RoundedRectangleBorder(
@@ -176,161 +162,85 @@ class _AuthPageState extends State<AuthPage>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        TabBar(
-                          controller: _tabController,
-                          indicatorColor: theme.colorScheme.primary,
-                          labelColor: Colors.white,
-                          unselectedLabelColor: Colors.white38,
-                          indicatorSize: TabBarIndicatorSize.label,
-                          tabs: const [
-                            Tab(text: 'Login'),
-                            Tab(text: 'Register'),
-                          ],
+                        // Custom sliding segmented tab selector (No hardcoded heights required)
+                        Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E1E1E),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    if (!_isLoading) {
+                                      setState(() {
+                                        _isLogin = true;
+                                        _errorMessage = null;
+                                      });
+                                    }
+                                  },
+                                  child: Container(
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: _isLogin ? theme.colorScheme.primary : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      'Login',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: _isLogin ? Colors.white : Colors.white60,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    if (!_isLoading) {
+                                      setState(() {
+                                        _isLogin = false;
+                                        _errorMessage = null;
+                                      });
+                                    }
+                                  },
+                                  child: Container(
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: !_isLogin ? theme.colorScheme.primary : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      'Register',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: !_isLogin ? Colors.white : Colors.white60,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 24),
                         if (_errorMessage != null)
                           AppErrorHandler.buildInlineError(
                             message: _errorMessage!,
                             onRetry: () {
-                              if (_tabController.index == 0) {
+                              if (_isLogin) {
                                 _handleLogin();
                               } else {
                                 _handleRegister();
                               }
                             },
                           ),
-                        SizedBox(
-                          height: 280,
-                          child: TabBarView(
-                            controller: _tabController,
-                            children: [
-                              // Login Form
-                              Form(
-                                key: _loginFormKey,
-                                child: Column(
-                                  children: [
-                                    TextFormField(
-                                      controller: _loginUsername,
-                                      enabled: !_isLoading,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Username',
-                                        prefixIcon: Icon(Icons.person_outline),
-                                      ),
-                                      validator: (v) => v == null || v.isEmpty
-                                          ? 'Enter username'
-                                          : null,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    TextFormField(
-                                      controller: _loginPassword,
-                                      enabled: !_isLoading,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Password',
-                                        prefixIcon: Icon(Icons.lock_outline),
-                                      ),
-                                      obscureText: true,
-                                      validator: (v) => v == null || v.isEmpty
-                                          ? 'Enter password'
-                                          : null,
-                                    ),
-                                    const Spacer(),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      height: 50,
-                                      child: ElevatedButton(
-                                        onPressed: _isLoading ? null : _handleLogin,
-                                        child: _isLoading
-                                            ? const SizedBox(
-                                                height: 20,
-                                                width: 20,
-                                                child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  valueColor:
-                                                      AlwaysStoppedAnimation<Color>(
-                                                          Colors.white),
-                                                ),
-                                              )
-                                            : const Text('Login'),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              // Register Form
-                              Form(
-                                key: _registerFormKey,
-                                child: Column(
-                                  children: [
-                                    TextFormField(
-                                      controller: _regUsername,
-                                      enabled: !_isLoading,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Username',
-                                        prefixIcon: Icon(Icons.person_outline),
-                                      ),
-                                      validator: (v) => v == null || v.isEmpty
-                                          ? 'Enter username'
-                                          : null,
-                                    ),
-                                    const SizedBox(height: 12),
-                                    TextFormField(
-                                      controller: _regEmail,
-                                      enabled: !_isLoading,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Email',
-                                        prefixIcon: Icon(Icons.email_outlined),
-                                      ),
-                                      keyboardType: TextInputType.emailAddress,
-                                      validator: (v) {
-                                        if (v == null || v.isEmpty) {
-                                          return 'Enter email';
-                                        }
-                                        if (!v.contains('@') || !v.contains('.')) {
-                                          return 'Enter a valid email';
-                                        }
-                                        return null;
-                                      },
-                                    ),
-                                    const SizedBox(height: 12),
-                                    TextFormField(
-                                      controller: _regPassword,
-                                      enabled: !_isLoading,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Password',
-                                        prefixIcon: Icon(Icons.lock_outline),
-                                      ),
-                                      obscureText: true,
-                                      validator: (v) => v == null || v.length < 6
-                                          ? 'Password must be 6+ chars'
-                                          : null,
-                                    ),
-                                    const Spacer(),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      height: 50,
-                                      child: ElevatedButton(
-                                        onPressed:
-                                            _isLoading ? null : _handleRegister,
-                                        child: _isLoading
-                                            ? const SizedBox(
-                                                height: 20,
-                                                width: 20,
-                                                child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  valueColor:
-                                                      AlwaysStoppedAnimation<Color>(
-                                                          Colors.white),
-                                                ),
-                                              )
-                                            : const Text('Register'),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        
+                        // Dynamic rendering without enclosing constraints to support system font-scaling safely
+                        _isLogin ? _buildLoginForm(theme) : _buildRegisterForm(theme),
                       ],
                     ),
                   ),
@@ -339,6 +249,121 @@ class _AuthPageState extends State<AuthPage>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLoginForm(ThemeData theme) {
+    return Form(
+      key: _loginFormKey,
+      child: Column(
+        children: [
+          TextFormField(
+            controller: _loginUsername,
+            enabled: !_isLoading,
+            decoration: const InputDecoration(
+              labelText: 'Username',
+              prefixIcon: Icon(Icons.person_outline),
+            ),
+            validator: (v) => v == null || v.isEmpty ? 'Enter username' : null,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _loginPassword,
+            enabled: !_isLoading,
+            decoration: const InputDecoration(
+              labelText: 'Password',
+              prefixIcon: Icon(Icons.lock_outline),
+            ),
+            obscureText: true,
+            validator: (v) => v == null || v.isEmpty ? 'Enter password' : null,
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _handleLogin,
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Text('Login'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRegisterForm(ThemeData theme) {
+    return Form(
+      key: _registerFormKey,
+      child: Column(
+        children: [
+          TextFormField(
+            controller: _regUsername,
+            enabled: !_isLoading,
+            decoration: const InputDecoration(
+              labelText: 'Username',
+              prefixIcon: Icon(Icons.person_outline),
+            ),
+            validator: (v) => v == null || v.isEmpty ? 'Enter username' : null,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _regEmail,
+            enabled: !_isLoading,
+            decoration: const InputDecoration(
+              labelText: 'Email',
+              prefixIcon: Icon(Icons.email_outlined),
+            ),
+            keyboardType: TextInputType.emailAddress,
+            validator: (v) {
+              if (v == null || v.isEmpty) {
+                return 'Enter email';
+              }
+              if (!v.contains('@') || !v.contains('.')) {
+                return 'Enter a valid email';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _regPassword,
+            enabled: !_isLoading,
+            decoration: const InputDecoration(
+              labelText: 'Password',
+              prefixIcon: Icon(Icons.lock_outline),
+            ),
+            obscureText: true,
+            validator: (v) => v == null || v.length < 6 ? 'Password must be 6+ chars' : null,
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _handleRegister,
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Text('Register'),
+            ),
+          ),
+        ],
       ),
     );
   }
