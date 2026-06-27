@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/chat_provider.dart';
 import '../utils/api.dart';
 import '../utils/error_handler.dart';
 
@@ -17,9 +18,7 @@ class _HomePageState extends State<HomePage> {
   final ApiService _apiService = ApiService();
   
   List<dynamic> _searchResults = [];
-  List<dynamic> _recentChats = [];
   bool _isSearching = false;
-  bool _isLoadingRecent = false;
   bool _recentChatsLoaded = false;
   String _lastSearchQuery = '';
 
@@ -27,7 +26,7 @@ class _HomePageState extends State<HomePage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_recentChatsLoaded) {
-      _loadRecentChats();
+      Provider.of<ChatProvider>(context, listen: false).loadRecentChats();
       _recentChatsLoaded = true;
     }
   }
@@ -39,25 +38,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadRecentChats() async {
-    setState(() {
-      _isLoadingRecent = true;
-    });
-    try {
-      final token = context.read<AuthProvider>().token;
-      if (token == null) return;
-      final chats = await _apiService.fetchRecentChats(token);
-      setState(() {
-        _recentChats = chats;
-      });
-    } catch (err) {
-      debugPrint('Error loading recent chats: $err');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingRecent = false;
-        });
-      }
-    }
+    final auth = context.read<AuthProvider>();
+    if (auth.token == null) return;
+    await context.read<ChatProvider>().loadRecentChats();
   }
 
   Future<void> _performSearch(String query) async {
@@ -213,24 +196,28 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildRecentChatsList(ThemeData theme) {
-    if (_isLoadingRecent) {
+    final chatProvider = Provider.of<ChatProvider>(context);
+    final recentChats = chatProvider.recentChats;
+
+    if (chatProvider.isLoadingRecent) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_recentChats.isEmpty) {
+    if (recentChats.isEmpty) {
       return _buildEmptyState(theme);
     }
 
     return ListView.separated(
-      itemCount: _recentChats.length,
+      itemCount: recentChats.length,
       separatorBuilder: (context, index) => const Divider(
         color: Color(0xFF222222),
         height: 1,
       ),
       itemBuilder: (context, index) {
-        final user = _recentChats[index];
+        final user = recentChats[index];
         final String username = user['username'] ?? 'Unknown';
         final String userId = user['_id'] ?? '';
+        final int unreadCount = user['unreadCount'] as int? ?? 0;
 
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -251,15 +238,35 @@ class _HomePageState extends State<HomePage> {
               color: Colors.white,
             ),
           ),
-          subtitle: const Text(
-            'Tap to continue conversation',
-            style: TextStyle(color: Colors.white38, fontSize: 13),
+          subtitle: Text(
+            unreadCount > 0 ? '$unreadCount unread messages' : 'Tap to continue conversation',
+            style: TextStyle(
+              color: unreadCount > 0 ? theme.colorScheme.secondary : Colors.white38,
+              fontSize: 13,
+              fontWeight: unreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
+            ),
           ),
-          trailing: Icon(
-            Icons.chat_bubble_outline_rounded,
-            color: theme.colorScheme.primary.withValues(alpha: 0.7),
-            size: 20,
-          ),
+          trailing: unreadCount > 0
+              ? Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '$unreadCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                )
+              : Icon(
+                  Icons.chat_bubble_outline_rounded,
+                  color: theme.colorScheme.primary.withValues(alpha: 0.7),
+                  size: 20,
+                ),
           onTap: () async {
             await Navigator.pushNamed(
               context,

@@ -1,4 +1,8 @@
-require('dotenv').config();
+const path = require('path');
+const dotenv = require('dotenv');
+
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
@@ -12,6 +16,9 @@ const { verifyToken } = require('./middleware/auth');
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
 app.use('/api/auth', authRoutes);
 app.use('/api/users', verifyToken, userRoutes);
 app.use('/api/chats', verifyToken, chatRoutes);
@@ -37,28 +44,70 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.user.id}`);
+  const userId = socket.user.id;
+  console.log(`User connected: ${userId}`);
+  
+  // Join a room unique to this user ID
+  socket.join(userId);
+
   socket.on('private_message', async ({ to, content }) => {
-    const Message = require('./models/Message');
-    const message = await Message.create({ from: socket.user.id, to, content, timestamp: new Date() });
-    // emit to recipient if online
-    for (let [id, s] of io.sockets.sockets) {
-      if (s.user && s.user.id === to) {
-        s.emit('private_message', message);
-        break;
-      }
+    try {
+      const Message = require('./models/Message');
+      const message = await Message.create({ 
+        from: userId, 
+        to, 
+        content, 
+        timestamp: new Date() 
+      });
+      
+      // Emit to recipient's room
+      io.to(to).emit('private_message', message);
+      
+      // Emit back to all of sender's sockets/sessions
+      io.to(userId).emit('private_message', message);
+    } catch (err) {
+      console.error('Error handling private message:', err);
+      socket.emit('error', { message: 'Failed to send message' });
     }
-    // also emit back to sender for UI update
-    socket.emit('private_message', message);
+  });
+
+  socket.on('typing', ({ to, isTyping }) => {
+    io.to(to).emit('typing', { from: userId, isTyping });
+  });
+
+  socket.on('mark_as_read', async ({ messageId, from }) => {
+    try {
+      const Message = require('./models/Message');
+      await Message.updateOne({ _id: messageId }, { $set: { read: true } });
+    } catch (err) {
+      console.error('Error marking message as read:', err);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`User disconnected: ${userId}`);
   });
 });
 
 const PORT = process.env.PORT || 5000;
-const DB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/chetanu';
+const DB_URI = process.env.MONGODB_URI?.trim();
 
-mongoose.connect(DB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => {
-    console.log('MongoDB connected');
-    server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
-  })
-  .catch(err => console.error('MongoDB connection error:', err));
+const startServer = () => {
+  server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+};
+
+if (!DB_URI) {
+  console.warn('MongoDB URI is not set. Starting server without database connection. Set MONGODB_URI to enable DB-backed features.');
+  startServer();
+} else {
+  mongoose.connect(DB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => {
+      console.log('MongoDB connected');
+      startServer();
+    })
+    .catch(err => {
+      console.error('MongoDB connection error:', err.message);
+      console.warn('Starting server without database connection. Set MONGODB_URI to a real MongoDB URI to enable DB-backed features.');
+      startServer();
+    });
+}

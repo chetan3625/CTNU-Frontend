@@ -8,19 +8,45 @@ class ChatProvider extends ChangeNotifier {
   final ApiService _apiService = ApiService();
   
   List<ChatMessage> _messages = [];
+  List<dynamic> _recentChats = [];
   bool _isLoading = false;
+  bool _isLoadingRecent = false;
   String? _activeChatUserId;
   socket_io.Socket? _socket;
+  String? _token;
+  bool _isOtherUserTyping = false;
 
   List<ChatMessage> get messages => _messages;
+  List<dynamic> get recentChats => _recentChats;
   bool get isLoading => _isLoading;
+  bool get isLoadingRecent => _isLoadingRecent;
   String? get activeChatUserId => _activeChatUserId;
+  bool get isOtherUserTyping => _isOtherUserTyping;
+
+  void updateToken(String? token) {
+    _token = token;
+  }
+
+  Future<void> loadRecentChats() async {
+    if (_token == null) return;
+    _isLoadingRecent = true;
+    notifyListeners();
+    try {
+      _recentChats = await _apiService.fetchRecentChats(_token!);
+    } catch (e) {
+      debugPrint('Error loading recent chats: $e');
+    } finally {
+      _isLoadingRecent = false;
+      notifyListeners();
+    }
+  }
 
   void initializeSocketListener(socket_io.Socket? socket, String currentUserId) {
     if (_socket == socket) return;
     
-    // Clean up previous listeners if any
+    // Clean up previous listeners
     _socket?.off('private_message');
+    _socket?.off('typing');
     
     _socket = socket;
     if (_socket == null) return;
@@ -28,11 +54,47 @@ class ChatProvider extends ChangeNotifier {
     _socket!.on('private_message', (data) {
       final msg = ChatMessage.fromJson(data as Map<String, dynamic>);
       
-      // If the message is relevant to the active chat session (either sent or received)
+      // If the message is relevant to the active chat session
       if (_activeChatUserId != null &&
           ((msg.from == _activeChatUserId && msg.to == currentUserId) ||
            (msg.from == currentUserId && msg.to == _activeChatUserId))) {
         _messages.add(msg);
+        
+        // If we received a message in the active chat, mark it as read on the backend
+        if (msg.from == _activeChatUserId) {
+          _socket!.emit('mark_as_read', {
+            'messageId': msg.id,
+            'from': msg.from,
+          });
+        }
+        notifyListeners();
+      } else {
+        // Increment unread count in recent chats
+        bool found = false;
+        for (int i = 0; i < _recentChats.length; i++) {
+          if (_recentChats[i]['_id'] == msg.from) {
+            _recentChats[i]['unreadCount'] = (_recentChats[i]['unreadCount'] ?? 0) + 1;
+            // Bubble to the top of the list
+            final chat = _recentChats.removeAt(i);
+            _recentChats.insert(0, chat);
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          // If the user isn't in our recent list, refresh the list
+          loadRecentChats();
+        } else {
+          notifyListeners();
+        }
+      }
+    });
+
+    _socket!.on('typing', (data) {
+      final fromId = data['from'] as String;
+      final isTyping = data['isTyping'] as bool;
+      if (_activeChatUserId == fromId) {
+        _isOtherUserTyping = isTyping;
         notifyListeners();
       }
     });
@@ -40,6 +102,7 @@ class ChatProvider extends ChangeNotifier {
 
   Future<void> loadChatHistory(String token, String otherUserId) async {
     _activeChatUserId = otherUserId;
+    _isOtherUserTyping = false;
     _isLoading = true;
     _messages = [];
     notifyListeners();
@@ -49,6 +112,14 @@ class ChatProvider extends ChangeNotifier {
       _messages = rawMsgs
           .map((m) => ChatMessage.fromJson(m as Map<String, dynamic>))
           .toList();
+      
+      // Since history marked all messages as read, clear unread count for this user in recent list
+      for (int i = 0; i < _recentChats.length; i++) {
+        if (_recentChats[i]['_id'] == otherUserId) {
+          _recentChats[i]['unreadCount'] = 0;
+          break;
+        }
+      }
     } catch (e) {
       debugPrint('Error loading chat history: $e');
       rethrow;
@@ -71,6 +142,7 @@ class ChatProvider extends ChangeNotifier {
 
   void clearActiveChat() {
     _activeChatUserId = null;
+    _isOtherUserTyping = false;
     _messages = [];
     notifyListeners();
   }
@@ -78,6 +150,7 @@ class ChatProvider extends ChangeNotifier {
   @override
   void dispose() {
     _socket?.off('private_message');
+    _socket?.off('typing');
     super.dispose();
   }
 }

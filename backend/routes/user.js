@@ -7,8 +7,10 @@ router.get('/search', async (req, res) => {
   const { username } = req.query;
   if (!username) return res.status(400).json({ message: 'username query required' });
   try {
-    const users = await User.find({ username: { $regex: username, $options: 'i' } })
-      .select('_id username');
+    const users = await User.find({
+      username: { $regex: username, $options: 'i' },
+      _id: { $ne: req.user.id }
+    }).select('_id username');
     res.json(users);
   } catch (err) {
     console.error(err);

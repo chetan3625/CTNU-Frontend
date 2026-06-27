@@ -15,7 +15,7 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  
+
   bool _initialized = false;
   late String _otherUserId;
   late String _otherUsername;
@@ -24,16 +24,17 @@ class _ChatPageState extends State<ChatPage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_initialized) {
-      final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+      final args =
+          ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
       _otherUserId = args['id'] as String;
       _otherUsername = args['username'] as String;
 
       final auth = Provider.of<AuthProvider>(context, listen: false);
       final chat = Provider.of<ChatProvider>(context, listen: false);
-      
+
       // Hook up real-time listener to current socket
       chat.initializeSocketListener(auth.socket, auth.userId ?? '');
-      
+
       // Fetch historical messages
       if (auth.token != null) {
         chat.loadChatHistory(auth.token!, _otherUserId).then((_) {
@@ -55,7 +56,7 @@ class _ChatPageState extends State<ChatPage> {
       chat.removeListener(_scrollToBottom);
       chat.clearActiveChat();
     } catch (_) {}
-    
+
     _scrollController.dispose();
     _messageController.dispose();
     super.dispose();
@@ -106,7 +107,9 @@ class _ChatPageState extends State<ChatPage> {
         title: Row(
           children: [
             CircleAvatar(
-              backgroundColor: theme.colorScheme.secondary.withValues(alpha: 0.2),
+              backgroundColor: theme.colorScheme.secondary.withValues(
+                alpha: 0.2,
+              ),
               radius: 18,
               child: Text(
                 _otherUsername.substring(0, 1).toUpperCase(),
@@ -125,7 +128,10 @@ class _ChatPageState extends State<ChatPage> {
                 children: [
                   Text(
                     _otherUsername,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const Text(
                     'Online', // Assume online as socket connection handles real-time
@@ -177,7 +183,10 @@ class _ChatPageState extends State<ChatPage> {
 
                 return ListView.builder(
                   controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   itemCount: chat.messages.length,
                   itemBuilder: (context, index) {
                     final msg = chat.messages[index];
@@ -198,7 +207,8 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _buildMessageBubble(ChatMessage msg, bool isMe, ThemeData theme) {
     // Formatting timestamp
-    final timeStr = "${msg.timestamp.hour.toString().padLeft(2, '0')}:${msg.timestamp.minute.toString().padLeft(2, '0')}";
+    final timeStr =
+        "${msg.timestamp.hour.toString().padLeft(2, '0')}:${msg.timestamp.minute.toString().padLeft(2, '0')}";
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -209,21 +219,19 @@ class _ChatPageState extends State<ChatPage> {
           maxWidth: MediaQuery.of(context).size.width * 0.75,
         ),
         decoration: BoxDecoration(
-          color: isMe
-              ? theme.colorScheme.primary
-              : const Color(0xFF1E1E1E),
+          color: isMe ? theme.colorScheme.primary : const Color(0xFF1E1E1E),
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
             bottomLeft: Radius.circular(isMe ? 16 : 4),
             bottomRight: Radius.circular(isMe ? 4 : 16),
           ),
-          border: isMe
-              ? null
-              : Border.all(color: const Color(0xFF2C2C2C)),
+          border: isMe ? null : Border.all(color: const Color(0xFF2C2C2C)),
         ),
         child: Column(
-          crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: isMe
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
@@ -273,7 +281,11 @@ class _ChatPageState extends State<ChatPage> {
             backgroundColor: theme.colorScheme.primary,
             radius: 24,
             child: IconButton(
-              icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+              icon: const Icon(
+                Icons.send_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
               onPressed: _sendMessage,
             ),
           ),

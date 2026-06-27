@@ -2,12 +2,78 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:workmanager/workmanager.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'providers/auth_provider.dart';
 import 'providers/chat_provider.dart';
 import 'pages/auth_page.dart';
 import 'pages/home_page.dart';
 import 'pages/chat_page.dart';
 import 'pages/calculator_page.dart';
+import 'utils/api.dart';
+
+@pragma('vm:entry-point')
+void callbackDispatcher() {
+  Workmanager().executeTask((task, inputData) async {
+    try {
+      WidgetsFlutterBinding.ensureInitialized();
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) return true;
+
+      final apiService = ApiService();
+      final recentChats = await apiService.fetchRecentChats(token);
+      
+      int totalUnread = 0;
+      List<String> unreadSenders = [];
+      for (final chat in recentChats) {
+        final unreadCount = chat['unreadCount'] as int? ?? 0;
+        if (unreadCount > 0) {
+          totalUnread += unreadCount;
+          unreadSenders.add(chat['username'] as String? ?? 'Unknown');
+        }
+      }
+
+      final lastTotalUnread = prefs.getInt('last_total_unread') ?? 0;
+      if (totalUnread > lastTotalUnread) {
+        final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+        const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+        const initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
+        
+        await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+        const androidPlatformChannelSpecifics = AndroidNotificationDetails(
+          'chetanu_chat_channel',
+          'Chat Notifications',
+          channelDescription: 'Notifications for new unread chat messages',
+          importance: Importance.max,
+          priority: Priority.high,
+          ticker: 'ticker',
+        );
+        const platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
+
+        String body = '';
+        if (unreadSenders.length == 1) {
+          body = 'New message from ${unreadSenders.first}';
+        } else {
+          body = 'New messages from ${unreadSenders.join(', ')}';
+        }
+
+        await flutterLocalNotificationsPlugin.show(
+          0,
+          'Chetanu Chat',
+          body,
+          platformChannelSpecifics,
+        );
+      }
+      await prefs.setInt('last_total_unread', totalUnread);
+    } catch (e) {
+      debugPrint('Error in Workmanager background task: $e');
+    }
+    return true;
+  });
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +82,25 @@ Future<void> main() async {
   } catch (_) {
     debugPrint('No .env file found; continuing with defaults.');
   }
+
+  // Initialize Workmanager background synchronization
+  try {
+    await Workmanager().initialize(
+      callbackDispatcher,
+      isInDebugMode: false,
+    );
+    await Workmanager().registerPeriodicTask(
+      "chetanu_bg_sync",
+      "fetch_unread_messages",
+      frequency: const Duration(minutes: 15),
+      constraints: Constraints(
+        networkType: NetworkType.connected,
+      ),
+    );
+  } catch (e) {
+    debugPrint('Failed to initialize Workmanager: $e');
+  }
+
   runApp(const MyApp());
 }
 
@@ -27,7 +112,16 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => ChatProvider()),
+        ChangeNotifierProxyProvider<AuthProvider, ChatProvider>(
+          create: (_) => ChatProvider(),
+          update: (_, auth, chat) {
+            chat!.updateToken(auth.token);
+            if (auth.isAuthenticated && auth.socket != null && auth.userId != null) {
+              chat.initializeSocketListener(auth.socket, auth.userId!);
+            }
+            return chat;
+          },
+        ),
       ],
       child: MaterialApp(
         title: 'Chetanu',
