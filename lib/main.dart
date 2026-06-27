@@ -76,11 +76,56 @@ class MyApp extends StatelessWidget {
         ),
         initialRoute: '/',
         routes: {
-          '/': (context) => const AuthPage(),
+          '/': (context) => const AuthGate(),
           '/home': (context) => const HomePage(),
           '/chat': (context) => const ChatPage(),
         },
       ),
     );
+  }
+}
+
+class AuthGate extends StatefulWidget {
+  const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  bool _checked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAuth();
+  }
+
+  Future<void> _checkAuth() async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    await auth.tryAutoLogin();
+    if (mounted) {
+      setState(() {
+        _checked = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_checked) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    final auth = Provider.of<AuthProvider>(context);
+    if (auth.isAuthenticated) {
+      return const HomePage();
+    } else {
+      return const AuthPage();
+    }
   }
 }

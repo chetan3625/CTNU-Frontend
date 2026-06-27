@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthProvider extends ChangeNotifier {
   String? _token;
@@ -34,6 +35,24 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> tryAutoLogin() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!prefs.containsKey('token')) return;
+
+      _token = prefs.getString('token');
+      _userId = prefs.getString('userId');
+      _username = prefs.getString('username');
+      
+      if (_token != null) {
+        _connectSocket();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error during auto login: $e');
+    }
+  }
+
   Future<void> register(String username, String email, String password) async {
     final resp = await http.post(
       Uri.parse('$_baseUrl/auth/register'),
@@ -58,6 +77,16 @@ class AuthProvider extends ChangeNotifier {
     _userId = data['user']['id'];
     _username = data['user']['username'];
     _connectSocket();
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token', _token!);
+      await prefs.setString('userId', _userId!);
+      await prefs.setString('username', _username!);
+    } catch (e) {
+      debugPrint('Failed to save auth to shared preferences: $e');
+    }
+
     notifyListeners();
   }
 
@@ -81,15 +110,35 @@ class AuthProvider extends ChangeNotifier {
     _userId = data['user']['id'];
     _username = data['user']['username'];
     _connectSocket();
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token', _token!);
+      await prefs.setString('userId', _userId!);
+      await prefs.setString('username', _username!);
+    } catch (e) {
+      debugPrint('Failed to save auth to shared preferences: $e');
+    }
+
     notifyListeners();
   }
 
-  void logout() {
+  void logout() async {
     _token = null;
     _userId = null;
     _username = null;
     _socket?.dispose();
     _socket = null;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('token');
+      await prefs.remove('userId');
+      await prefs.remove('username');
+    } catch (e) {
+      debugPrint('Failed to clear auth from shared preferences: $e');
+    }
+
     notifyListeners();
   }
 
