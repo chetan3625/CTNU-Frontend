@@ -22,13 +22,22 @@ class _CalculatorPageState extends State<CalculatorPage> {
         _result = '';
       } else if (value == '⌫') {
         if (_expression.isNotEmpty) {
-          // If deleting a function like sin(, cos(, tan(, log(, ln(
+          // Deleting multi-character scientific functions cleanly
           if (_expression.endsWith('sin(') ||
               _expression.endsWith('cos(') ||
               _expression.endsWith('tan(') ||
-              _expression.endsWith('log(')) {
+              _expression.endsWith('log(') ||
+              _expression.endsWith('abs(')) {
             _expression = _expression.substring(0, _expression.length - 4);
+          } else if (_expression.endsWith('asin(') ||
+              _expression.endsWith('acos(') ||
+              _expression.endsWith('atan(')) {
+            _expression = _expression.substring(0, _expression.length - 5);
           } else if (_expression.endsWith('ln(')) {
+            _expression = _expression.substring(0, _expression.length - 3);
+          } else if (_expression.endsWith('√(')) {
+            _expression = _expression.substring(0, _expression.length - 2);
+          } else if (_expression.endsWith('^-1')) {
             _expression = _expression.substring(0, _expression.length - 3);
           } else {
             _expression = _expression.substring(0, _expression.length - 1);
@@ -64,11 +73,21 @@ class _CalculatorPageState extends State<CalculatorPage> {
           .replaceAll('÷', '/')
           .replaceAll('π', 'pi');
 
+      // Auto-close missing parentheses (like Casio calculators do)
+      int openCount = 0;
+      int closeCount = 0;
+      for (int i = 0; i < parsedExpr.length; i++) {
+        if (parsedExpr[i] == '(') openCount++;
+        if (parsedExpr[i] == ')') closeCount++;
+      }
+      if (openCount > closeCount) {
+        parsedExpr += ')' * (openCount - closeCount);
+      }
+
       final evaluator = MathEvaluator(parsedExpr);
       final evalResult = evaluator.parse();
       
       setState(() {
-        // Format double results to avoid long floating point representations
         if (evalResult.isInfinite || evalResult.isNaN) {
           _result = 'Error';
           _showError = true;
@@ -76,7 +95,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
           if (evalResult == evalResult.toInt()) {
             _result = evalResult.toInt().toString();
           } else {
-            _result = evalResult.toStringAsFixed(6);
+            _result = evalResult.toStringAsFixed(8);
             // Trim trailing zeroes
             while (_result.endsWith('0')) {
               _result = _result.substring(0, _result.length - 1);
@@ -102,7 +121,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
     final isLandscape = size.width > size.height;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF101010),
+      backgroundColor: const Color(0xFF0F0F14),
       body: SafeArea(
         child: Column(
           children: [
@@ -121,9 +140,10 @@ class _CalculatorPageState extends State<CalculatorPage> {
                       SelectableText(
                         _expression.isEmpty ? '0' : _expression,
                         style: const TextStyle(
-                          fontSize: 36,
+                          fontSize: 32,
                           fontWeight: FontWeight.w300,
                           color: Colors.white70,
+                          letterSpacing: 1.0,
                         ),
                         textAlign: TextAlign.right,
                       ),
@@ -131,7 +151,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
                       Text(
                         _result,
                         style: TextStyle(
-                          fontSize: 48,
+                          fontSize: 44,
                           fontWeight: FontWeight.bold,
                           color: _showError ? Colors.redAccent : theme.colorScheme.secondary,
                         ),
@@ -142,23 +162,24 @@ class _CalculatorPageState extends State<CalculatorPage> {
                 ),
               ),
             ),
-            const Divider(color: Color(0xFF222222), height: 1),
+            const Divider(color: Color(0xFF22222A), height: 1),
 
             // Calculator Keypad
             Expanded(
-              flex: isLandscape ? 5 : 7,
+              flex: isLandscape ? 6 : 8,
               child: Container(
-                padding: const EdgeInsets.all(8.0),
-                color: const Color(0xFF151515),
+                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
+                color: const Color(0xFF141419),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildButtonRow(['C', '(', ')', '⌫', '÷']),
+                    _buildButtonRow(['C', '⌫', '(', ')', '÷']),
                     _buildButtonRow(['sin(', 'cos(', 'tan(', '^', '×']),
-                    _buildButtonRow(['7', '8', '9', 'log(', '-']),
-                    _buildButtonRow(['4', '5', '6', 'ln(', '+']),
-                    _buildButtonRow(['1', '2', '3', '√(', '=']),
-                    _buildButtonRow(['0', '.', 'π', 'e']),
+                    _buildButtonRow(['asin(', 'acos(', 'atan(', '√(', '-']),
+                    _buildButtonRow(['7', '8', '9', 'log(', '+']),
+                    _buildButtonRow(['4', '5', '6', 'ln(', '!']),
+                    _buildButtonRow(['1', '2', '3', 'π', 'e']),
+                    _buildButtonRow(['0', '.', 'abs(', '^-1', '=']),
                   ],
                 ),
               ),
@@ -176,7 +197,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
         children: keys.map((key) {
           return Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(4.0),
+              padding: const EdgeInsets.all(3.0),
               child: _buildCalculatorButton(key),
             ),
           );
@@ -188,9 +209,8 @@ class _CalculatorPageState extends State<CalculatorPage> {
   Widget _buildCalculatorButton(String text) {
     final theme = Theme.of(context);
     
-    // Styling attributes based on key types
     bool isOperator = ['÷', '×', '-', '+', '='].contains(text);
-    bool isFunction = ['sin(', 'cos(', 'tan(', 'log(', 'ln(', '√(', '^', '(', ')'].contains(text);
+    bool isFunction = ['sin(', 'cos(', 'tan(', 'asin(', 'acos(', 'atan(', 'log(', 'ln(', '√(', '^', '(', ')', '!', 'abs(', '^-1'].contains(text);
     bool isClear = ['C', '⌫'].contains(text);
 
     Color buttonColor;
@@ -200,23 +220,29 @@ class _CalculatorPageState extends State<CalculatorPage> {
       buttonColor = text == '=' ? theme.colorScheme.secondary : theme.colorScheme.primary;
       textColor = text == '=' ? Colors.black : Colors.white;
     } else if (isClear) {
-      buttonColor = const Color(0xFF333333);
-      textColor = Colors.amber;
+      buttonColor = const Color(0xFF2C2C35);
+      textColor = const Color(0xFFFFB300);
     } else if (isFunction) {
-      buttonColor = const Color(0xFF252525);
+      buttonColor = const Color(0xFF1E1E24);
       textColor = theme.colorScheme.secondary;
     } else {
-      buttonColor = const Color(0xFF1E1E1E);
+      buttonColor = const Color(0xFF24242C);
     }
 
-    // Display labels cleanups
+    // Display labels formatting
     String displayLabel = text;
     if (text == 'sin(') displayLabel = 'sin';
     if (text == 'cos(') displayLabel = 'cos';
     if (text == 'tan(') displayLabel = 'tan';
+    if (text == 'asin(') displayLabel = 'sin⁻¹';
+    if (text == 'acos(') displayLabel = 'cos⁻¹';
+    if (text == 'atan(') displayLabel = 'tan⁻¹';
     if (text == 'log(') displayLabel = 'log';
     if (text == 'ln(') displayLabel = 'ln';
     if (text == '√(') displayLabel = '√';
+    if (text == 'abs(') displayLabel = 'abs';
+    if (text == '!') displayLabel = 'x!';
+    if (text == '^-1') displayLabel = 'x⁻¹';
 
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
@@ -224,7 +250,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
         foregroundColor: textColor,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
         ),
         padding: EdgeInsets.zero,
       ),
@@ -234,7 +260,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
         child: Text(
           displayLabel,
           style: const TextStyle(
-            fontSize: 20,
+            fontSize: 18,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -243,7 +269,7 @@ class _CalculatorPageState extends State<CalculatorPage> {
   }
 }
 
-/// Recursive Descent Math Parser for Scientific Calculations
+/// Recursive Descent Math Parser for Casio FX-991ES Emulator
 class MathEvaluator {
   final String expression;
   int _pos = -1;
@@ -338,12 +364,25 @@ class MathEvaluator {
           x = math.cos(arg * math.pi / 180.0);
         } else if (name == 'tan') {
           x = math.tan(arg * math.pi / 180.0);
+        } else if (name == 'asin') {
+          if (arg < -1 || arg > 1) throw ArgumentError("asin domain is [-1, 1]");
+          x = math.asin(arg) * 180.0 / math.pi;
+        } else if (name == 'acos') {
+          if (arg < -1 || arg > 1) throw ArgumentError("acos domain is [-1, 1]");
+          x = math.acos(arg) * 180.0 / math.pi;
+        } else if (name == 'atan') {
+          x = math.atan(arg) * 180.0 / math.pi;
         } else if (name == 'sqrt' || name == '√') {
+          if (arg < 0) throw ArgumentError("Square root of negative number");
           x = math.sqrt(arg);
         } else if (name == 'log') {
+          if (arg <= 0) throw ArgumentError("Logarithm of non-positive number");
           x = math.log(arg) / math.ln10;
         } else if (name == 'ln') {
+          if (arg <= 0) throw ArgumentError("Logarithm of non-positive number");
           x = math.log(arg);
+        } else if (name == 'abs') {
+          x = arg.abs();
         } else {
           throw FormatException("Unknown function: $name");
         }
@@ -352,10 +391,32 @@ class MathEvaluator {
       throw FormatException("Unexpected character: ${String.fromCharCode(_ch)}");
     }
 
-    if (_eat(94)) {
-      x = math.pow(x, _parseFactor()).toDouble(); // ^
+    // Postfix operators loop
+    for (;;) {
+      if (_eat(33)) { // '!'
+        x = _factorial(x);
+      } else if (_eat(37)) { // '%'
+        x = x / 100.0;
+      } else if (_eat(94)) { // '^'
+        x = math.pow(x, _parseFactor()).toDouble();
+      } else {
+        break;
+      }
     }
 
     return x;
+  }
+
+  double _factorial(double val) {
+    if (val < 0 || val != val.toInt()) {
+      throw ArgumentError("Factorial of non-negative integer only");
+    }
+    int n = val.toInt();
+    if (n > 170) throw ArgumentError("Factorial overflow");
+    double result = 1;
+    for (int i = 2; i <= n; i++) {
+      result *= i;
+    }
+    return result;
   }
 }
