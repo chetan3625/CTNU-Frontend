@@ -99,7 +99,7 @@ class _HomePageState extends State<HomePage> {
 
   void _handleLogout() {
     context.read<AuthProvider>().logout();
-    Navigator.pushReplacementNamed(context, '/');
+    Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
   }
 
   @override

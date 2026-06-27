@@ -7,6 +7,7 @@ import 'providers/chat_provider.dart';
 import 'pages/auth_page.dart';
 import 'pages/home_page.dart';
 import 'pages/chat_page.dart';
+import 'pages/calculator_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -76,7 +77,8 @@ class MyApp extends StatelessWidget {
         ),
         initialRoute: '/',
         routes: {
-          '/': (context) => const AuthGate(),
+          '/': (context) => const CalculatorPage(),
+          '/auth_gate': (context) => const AuthGate(),
           '/home': (context) => const HomePage(),
           '/chat': (context) => const ChatPage(),
         },
