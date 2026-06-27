@@ -1,6 +1,7 @@
 // lib/pages/chat_page.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../models/message.dart';
@@ -16,6 +17,8 @@ class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
+  Timer? _typingTimer;
+  bool _isTyping = false;
   bool _initialized = false;
   late String _otherUserId;
   late String _otherUsername;
@@ -50,6 +53,7 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    _typingTimer?.cancel();
     // Avoid accessing provider if context is no longer active, but we can safely access listen:false
     try {
       final chat = Provider.of<ChatProvider>(context, listen: false);
@@ -60,6 +64,28 @@ class _ChatPageState extends State<ChatPage> {
     _scrollController.dispose();
     _messageController.dispose();
     super.dispose();
+  }
+
+  void _onTextChanged(String text) {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    if (auth.socket == null) return;
+
+    if (!_isTyping) {
+      _isTyping = true;
+      auth.socket!.emit('typing', {
+        'to': _otherUserId,
+        'isTyping': true,
+      });
+    }
+
+    _typingTimer?.cancel();
+    _typingTimer = Timer(const Duration(seconds: 2), () {
+      _isTyping = false;
+      auth.socket!.emit('typing', {
+        'to': _otherUserId,
+        'isTyping': false,
+      });
+    });
   }
 
   void _scrollToBottom({bool immediate = false}) {
@@ -100,8 +126,9 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthProvider>(context, listen: false);
+    final chat = Provider.of<ChatProvider>(context);
     final theme = Theme.of(context);
-
+ 
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -133,9 +160,13 @@ class _ChatPageState extends State<ChatPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const Text(
-                    'Online', // Assume online as socket connection handles real-time
-                    style: TextStyle(fontSize: 11, color: Colors.greenAccent),
+                  Text(
+                    chat.isOtherUserTyping ? 'Typing...' : 'Online',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: chat.isOtherUserTyping ? theme.colorScheme.secondary : Colors.greenAccent,
+                      fontWeight: chat.isOtherUserTyping ? FontWeight.bold : FontWeight.normal,
+                    ),
                   ),
                 ],
               ),
@@ -268,6 +299,7 @@ class _ChatPageState extends State<ChatPage> {
           Expanded(
             child: TextField(
               controller: _messageController,
+              onChanged: _onTextChanged,
               decoration: const InputDecoration(
                 hintText: 'Type a message...',
                 fillColor: Color(0xFF121212),
