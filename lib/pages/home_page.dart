@@ -235,7 +235,7 @@ class _HomePageState extends State<HomePage> {
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           leading: CircleAvatar(
-            backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+            backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
             child: Text(
               username.substring(0, 1).toUpperCase(),
               style: TextStyle(
@@ -257,7 +257,7 @@ class _HomePageState extends State<HomePage> {
           ),
           trailing: Icon(
             Icons.chat_bubble_outline_rounded,
-            color: theme.colorScheme.primary.withOpacity(0.7),
+            color: theme.colorScheme.primary.withValues(alpha: 0.7),
             size: 20,
           ),
           onTap: () async {
@@ -300,7 +300,7 @@ class _HomePageState extends State<HomePage> {
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           leading: CircleAvatar(
-            backgroundColor: theme.colorScheme.secondary.withOpacity(0.1),
+            backgroundColor: theme.colorScheme.secondary.withValues(alpha: 0.1),
             child: Text(
               username.substring(0, 1).toUpperCase(),
               style: TextStyle(
@@ -322,7 +322,7 @@ class _HomePageState extends State<HomePage> {
           ),
           trailing: Icon(
             Icons.chevron_right_rounded,
-            color: theme.colorScheme.primary.withOpacity(0.7),
+            color: theme.colorScheme.primary.withValues(alpha: 0.7),
           ),
           onTap: () async {
             await Navigator.pushNamed(
@@ -352,7 +352,7 @@ class _HomePageState extends State<HomePage> {
             Icon(
               Icons.chat_bubble_outline_rounded,
               size: 64,
-              color: theme.colorScheme.primary.withOpacity(0.3),
+              color: theme.colorScheme.primary.withValues(alpha: 0.3),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -376,7 +376,7 @@ class _HomePageState extends State<HomePage> {
             Icon(
               Icons.search_off_rounded,
               size: 64,
-              color: Colors.white38.withOpacity(0.3),
+              color: Colors.white38.withValues(alpha: 0.3),
             ),
             const SizedBox(height: 16),
             Text(

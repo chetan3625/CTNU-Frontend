@@ -106,7 +106,7 @@ class _ChatPageState extends State<ChatPage> {
         title: Row(
           children: [
             CircleAvatar(
-              backgroundColor: theme.colorScheme.secondary.withOpacity(0.2),
+              backgroundColor: theme.colorScheme.secondary.withValues(alpha: 0.2),
               radius: 18,
               child: Text(
                 _otherUsername.substring(0, 1).toUpperCase(),
