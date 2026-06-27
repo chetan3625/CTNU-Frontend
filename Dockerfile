@@ -1,5 +1,22 @@
 # Stage 1: Build the Flutter Web application
-FROM instrumentisto/flutter:stable AS build-env
+FROM debian:bookworm-slim AS build-env
+
+# Install dependencies required by the Flutter SDK
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    unzip \
+    xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone the official stable Flutter SDK
+RUN git clone https://github.com/flutter/flutter.git -b stable /usr/local/flutter
+
+# Add Flutter to system path
+ENV PATH="/usr/local/flutter/bin:/usr/local/flutter/bin/cache/dart-sdk/bin:${PATH}"
+
+# Pre-download Flutter binaries
+RUN flutter doctor
 
 # Set working directory
 WORKDIR /app
@@ -7,7 +24,7 @@ WORKDIR /app
 # Copy the project files
 COPY . .
 
-# Enable web support and fetch dependencies
+# Enable web support and install dependencies
 RUN flutter config --enable-web
 RUN flutter pub get
 
@@ -17,7 +34,7 @@ RUN flutter build web --release
 # Stage 2: Serve the compiled static files using Nginx
 FROM nginx:alpine
 
-# Copy the compiled web folder from the build stage to Nginx html directory
+# Copy the compiled web folder from build stage to Nginx html directory
 COPY --from=build-env /app/build/web /usr/share/nginx/html
 
 # Expose port 80 for Render routing
