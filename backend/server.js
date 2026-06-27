@@ -43,12 +43,21 @@ io.use(async (socket, next) => {
   }
 });
 
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   const userId = socket.user.id;
   console.log(`User connected: ${userId}`);
   
   // Join a room unique to this user ID
   socket.join(userId);
+
+  // Set user as online
+  try {
+    const User = require('./models/User');
+    await User.findByIdAndUpdate(userId, { isOnline: true });
+    socket.broadcast.emit('user_status', { userId, isOnline: true });
+  } catch (err) {
+    console.error('Error updating user online status:', err);
+  }
 
   socket.on('private_message', async ({ to, content }) => {
     try {
@@ -84,8 +93,16 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     console.log(`User disconnected: ${userId}`);
+    try {
+      const User = require('./models/User');
+      const now = new Date();
+      await User.findByIdAndUpdate(userId, { isOnline: false, lastSeen: now });
+      socket.broadcast.emit('user_status', { userId, isOnline: false, lastSeen: now });
+    } catch (err) {
+      console.error('Error updating user offline status:', err);
+    }
   });
 });
 

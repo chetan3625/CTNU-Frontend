@@ -10,7 +10,7 @@ router.get('/search', async (req, res) => {
     const users = await User.find({
       username: { $regex: username, $options: 'i' },
       _id: { $ne: req.user.id }
-    }).select('_id username');
+    }).select('_id username email isOnline lastSeen');
     res.json(users);
   } catch (err) {
     console.error(err);

@@ -15,6 +15,8 @@ class ChatProvider extends ChangeNotifier {
   socket_io.Socket? _socket;
   String? _token;
   bool _isOtherUserTyping = false;
+  bool _isActiveUserOnline = false;
+  DateTime? _activeUserLastSeen;
 
   List<ChatMessage> get messages => _messages;
   List<dynamic> get recentChats => _recentChats;
@@ -22,6 +24,8 @@ class ChatProvider extends ChangeNotifier {
   bool get isLoadingRecent => _isLoadingRecent;
   String? get activeChatUserId => _activeChatUserId;
   bool get isOtherUserTyping => _isOtherUserTyping;
+  bool get isActiveUserOnline => _isActiveUserOnline;
+  DateTime? get activeUserLastSeen => _activeUserLastSeen;
 
   void updateToken(String? token) {
     _token = token;
@@ -47,9 +51,37 @@ class ChatProvider extends ChangeNotifier {
     // Clean up previous listeners
     _socket?.off('private_message');
     _socket?.off('typing');
+    _socket?.off('user_status');
     
     _socket = socket;
     if (_socket == null) return;
+
+    _socket!.on('user_status', (data) {
+      final statusUserId = data['userId'] as String;
+      final isOnline = data['isOnline'] as bool;
+      final lastSeenStr = data['lastSeen'] as String?;
+      
+      // Update recent chats list status in real-time
+      for (int i = 0; i < _recentChats.length; i++) {
+        if (_recentChats[i]['_id'] == statusUserId) {
+          _recentChats[i]['isOnline'] = isOnline;
+          if (lastSeenStr != null) {
+            _recentChats[i]['lastSeen'] = lastSeenStr;
+          }
+          break;
+        }
+      }
+
+      if (_activeChatUserId == statusUserId) {
+        _isActiveUserOnline = isOnline;
+        if (lastSeenStr != null) {
+          _activeUserLastSeen = DateTime.tryParse(lastSeenStr);
+        }
+        notifyListeners();
+      } else {
+        notifyListeners();
+      }
+    });
 
     _socket!.on('private_message', (data) {
       final msg = ChatMessage.fromJson(data as Map<String, dynamic>);
@@ -103,6 +135,21 @@ class ChatProvider extends ChangeNotifier {
   Future<void> loadChatHistory(String token, String otherUserId) async {
     _activeChatUserId = otherUserId;
     _isOtherUserTyping = false;
+    _isActiveUserOnline = false;
+    _activeUserLastSeen = null;
+
+    // Load initial online/last seen status from recent chats list cache if present
+    for (final chat in _recentChats) {
+      if (chat['_id'] == otherUserId) {
+        _isActiveUserOnline = chat['isOnline'] as bool? ?? false;
+        final lastSeenStr = chat['lastSeen'] as String?;
+        if (lastSeenStr != null) {
+          _activeUserLastSeen = DateTime.tryParse(lastSeenStr);
+        }
+        break;
+      }
+    }
+
     _isLoading = true;
     _messages = [];
     notifyListeners();
@@ -143,6 +190,8 @@ class ChatProvider extends ChangeNotifier {
   void clearActiveChat() {
     _activeChatUserId = null;
     _isOtherUserTyping = false;
+    _isActiveUserOnline = false;
+    _activeUserLastSeen = null;
     _messages = [];
     notifyListeners();
   }
@@ -151,6 +200,7 @@ class ChatProvider extends ChangeNotifier {
   void dispose() {
     _socket?.off('private_message');
     _socket?.off('typing');
+    _socket?.off('user_status');
     super.dispose();
   }
 }

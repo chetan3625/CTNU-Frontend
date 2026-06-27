@@ -88,6 +88,23 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
+  String _formatLastSeen(DateTime? lastSeen) {
+    if (lastSeen == null) return 'Offline';
+    final now = DateTime.now();
+    final diff = now.difference(lastSeen);
+    if (diff.inMinutes < 1) {
+      return 'Last seen just now';
+    } else if (diff.inHours < 1) {
+      return 'Last seen ${diff.inMinutes}m ago';
+    } else if (diff.inDays < 1) {
+      final hour = lastSeen.hour.toString().padLeft(2, '0');
+      final minute = lastSeen.minute.toString().padLeft(2, '0');
+      return 'Last seen today at $hour:$minute';
+    } else {
+      return 'Last seen ${diff.inDays}d ago';
+    }
+  }
+
   void _scrollToBottom({bool immediate = false}) {
     if (!mounted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -161,11 +178,21 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                   ),
                   Text(
-                    chat.isOtherUserTyping ? 'Typing...' : 'Online',
+                    chat.isOtherUserTyping
+                        ? 'Typing...'
+                        : (chat.isActiveUserOnline
+                            ? 'Online'
+                            : _formatLastSeen(chat.activeUserLastSeen)),
                     style: TextStyle(
                       fontSize: 11,
-                      color: chat.isOtherUserTyping ? theme.colorScheme.secondary : Colors.greenAccent,
-                      fontWeight: chat.isOtherUserTyping ? FontWeight.bold : FontWeight.normal,
+                      color: chat.isOtherUserTyping
+                          ? theme.colorScheme.secondary
+                          : (chat.isActiveUserOnline
+                              ? Colors.greenAccent
+                              : Colors.white38),
+                      fontWeight: chat.isOtherUserTyping || chat.isActiveUserOnline
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                     ),
                   ),
                 ],

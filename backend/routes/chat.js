@@ -23,7 +23,7 @@ router.get('/recent', verifyToken, async (req, res) => {
     userIds.delete(userId); // remove current user
 
     const users = await User.find({ _id: { $in: Array.from(userIds) } })
-      .select('_id username email');
+      .select('_id username email isOnline lastSeen');
 
     const usersList = [];
     for (const u of users) {
