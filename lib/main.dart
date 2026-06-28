@@ -288,25 +288,43 @@ class _LifecycleObserverState extends State<LifecycleObserver> with WidgetsBindi
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      try {
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        authProvider.connectSocket();
-        Provider.of<ChatProvider>(context, listen: false).loadRecentChats();
-      } catch (e) {
-        debugPrint('LifecycleObserver: Error reconnecting on resume: $e');
-      }
-      _updateLifecycle(true);
-      return;
-    }
+    switch (state) {
+      case AppLifecycleState.resumed:
+        try {
+          final authProvider = Provider.of<AuthProvider>(context, listen: false);
+          authProvider.connectSocket();
+          Provider.of<ChatProvider>(context, listen: false).loadRecentChats();
+        } catch (e) {
+          debugPrint('LifecycleObserver: Error reconnecting on resume: $e');
+        }
+        _updateLifecycle(true);
+        break;
 
-    if (state == AppLifecycleState.paused) {
-      _updateLifecycle(false);
+      // App is being destroyed or fully hidden — go offline immediately.
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        _goOffline();
+        break;
+
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+        _updateLifecycle(false);
+        break;
+    }
+  }
+
+  void _goOffline() {
+    _updateLifecycle(false);
+    try {
+      Provider.of<AuthProvider>(context, listen: false).disconnectSocket();
+    } catch (e) {
+      debugPrint('LifecycleObserver: Error disconnecting socket: $e');
+    }
+    if (!kIsWeb) {
       try {
-        Provider.of<AuthProvider>(context, listen: false)
-            .disconnectSocketForBackground();
+        FlutterBackgroundService().invoke('disconnect');
       } catch (e) {
-        debugPrint('LifecycleObserver: Error pausing socket on background: $e');
+        debugPrint('LifecycleObserver: Error notifying background service: $e');
       }
     }
   }

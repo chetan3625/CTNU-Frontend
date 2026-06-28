@@ -93,6 +93,37 @@ function removeUserConnection(userId, socketId) {
   return false;
 }
 
+function isUserConnected(userId) {
+  const connections = userConnections.get(userId.toString());
+  return connections != null && connections.size > 0;
+}
+
+async function resetStaleOnlineStatus() {
+  try {
+    const User = require('./models/User');
+    const now = new Date();
+    await User.updateMany({ isOnline: true }, { $set: { isOnline: false, lastSeen: now } });
+    console.log('Reset stale online statuses on startup');
+  } catch (err) {
+    console.error('Error resetting stale online status:', err);
+  }
+}
+
+async function reconcileOnlineStatus() {
+  try {
+    const User = require('./models/User');
+    const onlineUsers = await User.find({ isOnline: true }).select('_id');
+    for (const user of onlineUsers) {
+      const id = user._id.toString();
+      if (!isUserConnected(id)) {
+        await setUserOffline(id);
+      }
+    }
+  } catch (err) {
+    console.error('Error reconciling online status:', err);
+  }
+}
+
 io.use(async (socket, next) => {
   const token = socket.handshake.auth.token;
   if (!token) return next(new Error('Authentication error'));
@@ -121,7 +152,7 @@ io.on('connection', async (socket) => {
     const onlineUsers = await User.find({ isOnline: true }).select('_id lastSeen');
     for (const onlineUser of onlineUsers) {
       const onlineUserIdStr = onlineUser._id.toString();
-      if (onlineUserIdStr !== userId) {
+      if (onlineUserIdStr !== userId && isUserConnected(onlineUserIdStr)) {
         socket.emit(
           'user_status',
           serializeUserStatus(onlineUserIdStr, true, onlineUser.lastSeen)
@@ -168,18 +199,28 @@ io.on('connection', async (socket) => {
   socket.on('get_user_status', async ({ userId: targetUserId }) => {
     if (!targetUserId) return;
     try {
+      const id = targetUserId.toString();
+      const actuallyOnline = isUserConnected(id);
       const User = require('./models/User');
-      const targetUser = await User.findById(targetUserId).select('isOnline lastSeen');
-      if (targetUser) {
-        socket.emit(
-          'user_status',
-          serializeUserStatus(
-            targetUserId,
-            targetUser.isOnline ?? false,
-            targetUser.lastSeen
-          )
-        );
+      const targetUser = await User.findById(id).select('isOnline lastSeen');
+
+      if (!targetUser) return;
+
+      if (actuallyOnline && !targetUser.isOnline) {
+        await User.findByIdAndUpdate(id, { isOnline: true });
+      } else if (!actuallyOnline && targetUser.isOnline) {
+        await setUserOffline(id);
+        return;
       }
+
+      socket.emit(
+        'user_status',
+        serializeUserStatus(
+          id,
+          actuallyOnline,
+          actuallyOnline ? null : targetUser.lastSeen
+        )
+      );
     } catch (err) {
       console.error('Error getting user status:', err);
     }
@@ -225,6 +266,7 @@ const PORT = process.env.PORT || 5000;
 const DB_URI = process.env.MONGODB_URI?.trim();
 
 const startServer = () => {
+  setInterval(reconcileOnlineStatus, 30000);
   server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 };
 
@@ -233,8 +275,9 @@ if (!DB_URI) {
   startServer();
 } else {
   mongoose.connect(DB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => {
+    .then(async () => {
       console.log('MongoDB connected');
+      await resetStaleOnlineStatus();
       startServer();
     })
     .catch(err => {

@@ -151,11 +151,12 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  void disconnectSocketForBackground() {
-    if (_socket?.connected == true) {
-      debugPrint('AuthProvider: Pausing foreground socket for background handoff');
-      _socket!.disconnect();
-    }
+  /// Fully tears down the socket so auto-reconnect cannot keep the user online.
+  void disconnectSocket() {
+    if (_socket == null) return;
+    debugPrint('AuthProvider: Disconnecting socket');
+    _disconnectSocket();
+    notifyListeners();
   }
 
   void _disconnectSocket() {
