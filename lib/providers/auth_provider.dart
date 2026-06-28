@@ -163,6 +163,16 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void connectSocket() {
+    if (_token == null) return;
+    if (_socket == null) {
+      _connectSocket();
+    } else if (!_socket!.connected) {
+      debugPrint('AuthProvider: Reconnecting socket...');
+      _socket!.connect();
+    }
+  }
+
   void _connectSocket() {
     if (_token == null) return;
     _socket = socket_io.io(
@@ -170,12 +180,21 @@ class AuthProvider extends ChangeNotifier {
       socket_io.OptionBuilder()
           .setTransports(['websocket', 'polling'])
           .setAuth({'token': _token})
-          .disableAutoConnect()
+          .enableReconnection()
+          .setReconnectionDelay(1000)
+          .setReconnectionMaxDelay(5000)
+          .setReconnectionAttempts(99999)
           .build(),
     );
     _socket!.connect();
-    _socket!.onConnect((_) => debugPrint('Socket connected'));
-    _socket!.onDisconnect((_) => debugPrint('Socket disconnected'));
+    _socket!.onConnect((_) {
+      debugPrint('Socket connected');
+      notifyListeners();
+    });
+    _socket!.onDisconnect((_) {
+      debugPrint('Socket disconnected');
+      notifyListeners();
+    });
     _socket!.onConnectError((err) => debugPrint('Socket connect error: $err'));
     _socket!.onError((err) => debugPrint('Socket error: $err'));
   }

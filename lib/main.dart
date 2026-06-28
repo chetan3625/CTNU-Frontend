@@ -276,6 +276,15 @@ class _LifecycleObserverState extends State<LifecycleObserver> with WidgetsBindi
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final isForeground = state == AppLifecycleState.resumed;
     _updateLifecycle(isForeground);
+    
+    if (isForeground) {
+      try {
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        authProvider.connectSocket();
+      } catch (e) {
+        debugPrint('LifecycleObserver: Error reconnecting socket on resume: $e');
+      }
+    }
   }
 
   void _updateLifecycle(bool isForeground) {

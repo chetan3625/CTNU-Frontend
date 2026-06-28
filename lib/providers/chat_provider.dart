@@ -50,12 +50,24 @@ class ChatProvider extends ChangeNotifier {
     if (_socket == socket) return;
     
     // Clean up previous listeners
+    _socket?.off('connect');
     _socket?.off('private_message');
     _socket?.off('typing');
     _socket?.off('user_status');
     
     _socket = socket;
     if (_socket == null) return;
+
+    // Re-synchronize data on connection recovery/reconnect
+    _socket!.on('connect', (_) {
+      debugPrint('ChatProvider: Socket connected/reconnected. Syncing chat data...');
+      if (_token != null && _activeChatUserId != null) {
+        loadChatHistory(_token!, _activeChatUserId!).catchError((e) {
+          debugPrint('ChatProvider: Error syncing history on reconnect: $e');
+        });
+      }
+      loadRecentChats();
+    });
 
     _socket!.on('user_status', (data) {
       final statusUserId = data['userId'] as String;
@@ -214,6 +226,7 @@ class ChatProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _socket?.off('connect');
     _socket?.off('private_message');
     _socket?.off('typing');
     _socket?.off('user_status');
