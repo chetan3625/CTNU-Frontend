@@ -8,6 +8,11 @@ class AppErrorHandler {
     String? fallbackMessage,
   }) {
     final message = _messageFrom(error, fallbackMessage: fallbackMessage);
+    debugPrint('================================================');
+    debugPrint('AppErrorHandler: ERROR SHOWED TO USER:');
+    debugPrint('Error: $error');
+    debugPrint('Message: $message');
+    debugPrint('================================================');
 
     if (!context.mounted) return;
 
