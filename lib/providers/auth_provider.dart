@@ -6,17 +6,20 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import '../utils/socket_config.dart';
 
 class AuthProvider extends ChangeNotifier {
   String? _token;
   String? _userId;
   String? _username;
   socket_io.Socket? _socket;
+  bool _isSocketConnected = false;
 
   String? get token => _token;
   String? get userId => _userId;
   String? get username => _username;
   socket_io.Socket? get socket => _socket;
+  bool get isSocketConnected => _isSocketConnected;
 
   bool get isAuthenticated => _token != null;
 
@@ -28,14 +31,6 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  String get _socketUrl {
-    try {
-      return dotenv.env['SOCKET_URL'] ?? 'https://ctnu-backend.onrender.com';
-    } catch (_) {
-      return 'https://ctnu-backend.onrender.com';
-    }
-  }
-
   Future<void> tryAutoLogin() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -44,14 +39,9 @@ class AuthProvider extends ChangeNotifier {
       _token = prefs.getString('token');
       _userId = prefs.getString('userId');
       _username = prefs.getString('username');
-      
+
       if (_token != null) {
         _connectSocket();
-        if (!kIsWeb) {
-          try {
-            FlutterBackgroundService().invoke('connect');
-          } catch (_) {}
-        }
         notifyListeners();
       }
     } catch (e) {
@@ -79,26 +69,11 @@ class AuthProvider extends ChangeNotifier {
       throw Exception('Registration response was invalid.');
     }
 
-    _token = data['token'];
-    _userId = data['user']['id'];
-    _username = data['user']['username'];
-    _connectSocket();
-    if (!kIsWeb) {
-      try {
-        FlutterBackgroundService().invoke('connect');
-      } catch (_) {}
-    }
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('token', _token!);
-      await prefs.setString('userId', _userId!);
-      await prefs.setString('username', _username!);
-    } catch (e) {
-      debugPrint('Failed to save auth to shared preferences: $e');
-    }
-
-    notifyListeners();
+    await _persistSession(
+      data['token'] as String,
+      data['user']['id'].toString(),
+      data['user']['username'] as String,
+    );
   }
 
   Future<void> login(String username, String password) async {
@@ -117,21 +92,24 @@ class AuthProvider extends ChangeNotifier {
       throw Exception('Login response was invalid.');
     }
 
-    _token = data['token'];
-    _userId = data['user']['id'];
-    _username = data['user']['username'];
+    await _persistSession(
+      data['token'] as String,
+      data['user']['id'].toString(),
+      data['user']['username'] as String,
+    );
+  }
+
+  Future<void> _persistSession(String token, String userId, String username) async {
+    _token = token;
+    _userId = userId;
+    _username = username;
     _connectSocket();
-    if (!kIsWeb) {
-      try {
-        FlutterBackgroundService().invoke('connect');
-      } catch (_) {}
-    }
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('token', _token!);
-      await prefs.setString('userId', _userId!);
-      await prefs.setString('username', _username!);
+      await prefs.setString('token', token);
+      await prefs.setString('userId', userId);
+      await prefs.setString('username', username);
     } catch (e) {
       debugPrint('Failed to save auth to shared preferences: $e');
     }
@@ -140,11 +118,11 @@ class AuthProvider extends ChangeNotifier {
   }
 
   void logout() async {
+    _disconnectSocket();
     _token = null;
     _userId = null;
     _username = null;
-    _socket?.dispose();
-    _socket = null;
+
     if (!kIsWeb) {
       try {
         FlutterBackgroundService().invoke('disconnect');
@@ -173,26 +151,51 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  void disconnectSocketForBackground() {
+    if (_socket?.connected == true) {
+      debugPrint('AuthProvider: Pausing foreground socket for background handoff');
+      _socket!.disconnect();
+    }
+  }
+
+  void _disconnectSocket() {
+    _isSocketConnected = false;
+    _socket?.clearListeners();
+    _socket?.dispose();
+    _socket = null;
+  }
+
   void _connectSocket() {
     if (_token == null) return;
-    _socket = socket_io.io(
-      _socketUrl,
-      socket_io.OptionBuilder()
-          .setTransports(['websocket', 'polling'])
-          .setAuth({'token': _token})
-          .enableReconnection()
-          .build(),
-    );
-    _socket!.connect();
+
+    _disconnectSocket();
+    _socket = SocketConfig.create(_token!);
+
     _socket!.onConnect((_) {
-      debugPrint('Socket connected');
+      debugPrint('AuthProvider: Socket connected');
+      _isSocketConnected = true;
       notifyListeners();
     });
+
     _socket!.onDisconnect((_) {
-      debugPrint('Socket disconnected');
+      debugPrint('AuthProvider: Socket disconnected');
+      _isSocketConnected = false;
       notifyListeners();
     });
-    _socket!.onConnectError((err) => debugPrint('Socket connect error: $err'));
-    _socket!.onError((err) => debugPrint('Socket error: $err'));
+
+    _socket!.onReconnect((_) {
+      debugPrint('AuthProvider: Socket reconnected');
+      _isSocketConnected = true;
+      notifyListeners();
+    });
+
+    _socket!.onConnectError((err) {
+      debugPrint('AuthProvider: Socket connect error: $err');
+      _isSocketConnected = false;
+    });
+
+    _socket!.onError((err) => debugPrint('AuthProvider: Socket error: $err'));
+
+    _socket!.connect();
   }
 }

@@ -36,10 +36,7 @@ class _ChatPageState extends State<ChatPage> {
       final auth = Provider.of<AuthProvider>(context, listen: false);
       final chat = Provider.of<ChatProvider>(context, listen: false);
 
-      // Hook up real-time listener to current socket
-      chat.initializeSocketListener(auth.socket, auth.userId ?? '');
-
-      // Fetch historical messages
+      // Fetch historical messages (socket listeners are attached globally)
       if (auth.token != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
@@ -131,10 +128,14 @@ class _ChatPageState extends State<ChatPage> {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
+    final auth = Provider.of<AuthProvider>(context, listen: false);
     final chat = Provider.of<ChatProvider>(context, listen: false);
+    if (auth.userId == null) return;
+
     try {
-      chat.sendMessage(text, _otherUserId);
+      chat.sendMessage(text, _otherUserId, auth.userId!);
       _messageController.clear();
+      _scrollToBottom();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -225,7 +226,7 @@ class _ChatPageState extends State<ChatPage> {
           Expanded(
             child: Consumer<ChatProvider>(
               builder: (context, chat, child) {
-                if (chat.isLoading) {
+                if (chat.isLoading && chat.messages.isEmpty) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
@@ -263,7 +264,10 @@ class _ChatPageState extends State<ChatPage> {
                   itemBuilder: (context, index) {
                     final msg = chat.messages[index];
                     final isMe = msg.from == auth.userId;
-                    return _buildMessageBubble(msg, isMe, theme);
+                    return KeyedSubtree(
+                      key: ValueKey(msg.id),
+                      child: _buildMessageBubble(msg, isMe, theme),
+                    );
                   },
                 );
               },
@@ -278,9 +282,9 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildMessageBubble(ChatMessage msg, bool isMe, ThemeData theme) {
-    // Formatting timestamp
+    final localTime = msg.timestamp.toLocal();
     final timeStr =
-        "${msg.timestamp.hour.toString().padLeft(2, '0')}:${msg.timestamp.minute.toString().padLeft(2, '0')}";
+        "${localTime.hour.toString().padLeft(2, '0')}:${localTime.minute.toString().padLeft(2, '0')}";
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,

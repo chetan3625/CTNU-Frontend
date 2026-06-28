@@ -16,11 +16,21 @@ class ChatMessage {
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     return ChatMessage(
-      id: json['_id'] as String,
-      from: json['from'] as String,
-      to: json['to'] as String,
+      id: json['_id'].toString(),
+      from: json['from'].toString(),
+      to: json['to'].toString(),
       content: json['content'] as String,
-      timestamp: DateTime.parse(json['timestamp'] as String),
+      timestamp: _parseTimestamp(json['timestamp']),
     );
+  }
+
+  static DateTime _parseTimestamp(dynamic value) {
+    if (value is String) {
+      return DateTime.parse(value).toLocal();
+    }
+    if (value is int) {
+      return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true).toLocal();
+    }
+    return DateTime.now();
   }
 }

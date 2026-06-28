@@ -288,15 +288,25 @@ class _LifecycleObserverState extends State<LifecycleObserver> with WidgetsBindi
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final isForeground = state == AppLifecycleState.resumed;
-    _updateLifecycle(isForeground);
-    
-    if (isForeground) {
+    if (state == AppLifecycleState.resumed) {
       try {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         authProvider.connectSocket();
+        Provider.of<ChatProvider>(context, listen: false).loadRecentChats();
       } catch (e) {
-        debugPrint('LifecycleObserver: Error reconnecting socket on resume: $e');
+        debugPrint('LifecycleObserver: Error reconnecting on resume: $e');
+      }
+      _updateLifecycle(true);
+      return;
+    }
+
+    if (state == AppLifecycleState.paused) {
+      _updateLifecycle(false);
+      try {
+        Provider.of<AuthProvider>(context, listen: false)
+            .disconnectSocketForBackground();
+      } catch (e) {
+        debugPrint('LifecycleObserver: Error pausing socket on background: $e');
       }
     }
   }

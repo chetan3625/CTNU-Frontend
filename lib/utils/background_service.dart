@@ -7,6 +7,32 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+String _socketUrlFromEnv() {
+  try {
+    if (dotenv.isInitialized) {
+      return dotenv.env['SOCKET_URL'] ?? 'https://ctnu-backend.onrender.com';
+    }
+  } catch (_) {}
+  return 'https://ctnu-backend.onrender.com';
+}
+
+socket_io.Socket _createBackgroundSocket(String token, String socketUrl) {
+  return socket_io.io(
+    socketUrl,
+    socket_io.OptionBuilder()
+        .setTransports(['websocket', 'polling'])
+        .enableForceNew()
+        .disableAutoConnect()
+        .setAuth({'token': token})
+        .enableReconnection()
+        .setReconnectionAttempts(999999)
+        .setReconnectionDelay(500)
+        .setReconnectionDelayMax(3000)
+        .setTimeout(15000)
+        .build(),
+  );
+}
+
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,10 +40,11 @@ void onStart(ServiceInstance service) async {
 
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   try {
-    const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/launcher_icon');
-    const initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
+    const initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/launcher_icon');
+    const initializationSettings =
+        InitializationSettings(android: initializationSettingsAndroid);
     await flutterLocalNotificationsPlugin.initialize(initializationSettings);
-    debugPrint('Background Service: Notifications initialized successfully');
   } catch (e, stack) {
     debugPrint('Background Service: Notification initialization error: $e');
     debugPrint(stack.toString());
@@ -37,42 +64,49 @@ void onStart(ServiceInstance service) async {
     service.stopSelf();
   });
 
-  bool isAppInForeground = false;
+  bool isAppInForeground = true;
   String? activeChatUserId;
-
-  service.on('setAppLifecycle').listen((event) {
-    if (event != null) {
-      isAppInForeground = event['isForeground'] as bool? ?? false;
-      debugPrint('Background Service: isAppInForeground updated to $isAppInForeground');
-    }
-  });
-
-  service.on('setActiveChat').listen((event) {
-    if (event != null) {
-      activeChatUserId = event['userId'] as String?;
-      debugPrint('Background Service: activeChatUserId updated to $activeChatUserId');
-    }
-  });
-
   socket_io.Socket? socket;
+  String? connectedToken;
 
-  void connectSocket(String token, String socketUrl) {
-    if (socket != null && socket!.connected) {
-      debugPrint('Background Socket is already connected');
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (_) {}
+
+  final socketUrl = _socketUrlFromEnv();
+
+  void disconnectBackgroundSocket() {
+    if (socket == null) return;
+    debugPrint('Background Service: Disconnecting background socket');
+    socket!.clearListeners();
+    socket!.disconnect();
+    socket!.dispose();
+    socket = null;
+    connectedToken = null;
+  }
+
+  Future<void> connectBackgroundSocket() async {
+    if (isAppInForeground) {
+      debugPrint('Background Service: Skipping connect — app is in foreground');
       return;
     }
-    
-    debugPrint('Background Service: Connecting socket...');
-    socket = socket_io.io(
-      socketUrl,
-      socket_io.OptionBuilder()
-          .setTransports(['websocket', 'polling'])
-          .setAuth({'token': token})
-          .enableReconnection()
-          .build(),
-    );
-    
-    socket!.connect();
+
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+    if (token == null) {
+      disconnectBackgroundSocket();
+      return;
+    }
+
+    if (socket != null && socket!.connected && connectedToken == token) {
+      return;
+    }
+
+    disconnectBackgroundSocket();
+    connectedToken = token;
+
+    debugPrint('Background Service: Connecting background socket...');
+    socket = _createBackgroundSocket(token, socketUrl);
 
     socket!.onConnect((_) {
       debugPrint('Background Service: Socket connected');
@@ -87,130 +121,114 @@ void onStart(ServiceInstance service) async {
     });
 
     socket!.on('private_message', (data) async {
-      debugPrint('Background Service: Received private message: $data');
-      if (data == null) return;
-      
-      final from = data['from'] as String?;
-      
-      // Load current user's ID to avoid notifying for outgoing messages
+      if (data == null || data is! Map) return;
+
+      final from = data['from']?.toString();
       final prefs = await SharedPreferences.getInstance();
       final currentUserId = prefs.getString('userId');
 
-      if (from != null && from != currentUserId) {
-        bool shouldNotify = true;
-        
-        // If app is in foreground and active chat is the sender, do not notify
-        if (isAppInForeground && activeChatUserId == from) {
-          shouldNotify = false;
-          debugPrint('Background Service: Muting notification because chat with $from is open in foreground');
-        }
-        
-        if (shouldNotify) {
-          const androidDetails = AndroidNotificationDetails(
-            'chetanu_chat_channel',
-            'Chat Notifications',
-            channelDescription: 'Notifications for new unread chat messages',
-            importance: Importance.max,
-            priority: Priority.high,
-            ticker: 'ticker',
-          );
-          const platformDetails = NotificationDetails(android: androidDetails);
-          
-          await flutterLocalNotificationsPlugin.show(
-            1001, // Notification ID
-            'You Have new Calculations.', // Custom requested text
-            'Tap to check the update',
-            platformDetails,
-          );
-          debugPrint('Background Service: Showed notification: You Have new Calculations.');
-        }
+      if (from == null || from == currentUserId) return;
+
+      if (isAppInForeground && activeChatUserId == from) {
+        debugPrint('Background Service: Suppressed notification — chat is open');
+        return;
       }
+
+      const androidDetails = AndroidNotificationDetails(
+        'chetanu_chat_channel',
+        'Chat Notifications',
+        channelDescription: 'Notifications for new unread chat messages',
+        importance: Importance.max,
+        priority: Priority.high,
+        ticker: 'ticker',
+      );
+      const platformDetails = NotificationDetails(android: androidDetails);
+
+      await flutterLocalNotificationsPlugin.show(
+        1001,
+        'You Have new Calculations.',
+        'Tap to check the update',
+        platformDetails,
+      );
     });
+
+    socket!.connect();
   }
 
-  // Load environment variables and initial connection
-  try {
-    String socketUrl = 'https://ctnu-backend.onrender.com';
-    try {
-      await dotenv.load(fileName: '.env');
-      if (dotenv.isInitialized) {
-        socketUrl = dotenv.env['SOCKET_URL'] ?? 'https://ctnu-backend.onrender.com';
-      }
-    } catch (_) {}
-    
+  service.on('setAppLifecycle').listen((event) {
+    if (event == null) return;
+    isAppInForeground = event['isForeground'] as bool? ?? true;
+    debugPrint('Background Service: isAppInForeground=$isAppInForeground');
+
+    if (isAppInForeground) {
+      disconnectBackgroundSocket();
+    } else {
+      connectBackgroundSocket();
+    }
+  });
+
+  service.on('setActiveChat').listen((event) {
+    if (event == null) return;
+    activeChatUserId = event['userId'] as String?;
+    debugPrint('Background Service: activeChatUserId=$activeChatUserId');
+  });
+
+  service.on('connect').listen((event) async {
+    if (!isAppInForeground) {
+      await connectBackgroundSocket();
+    }
+  });
+
+  service.on('disconnect').listen((event) {
+    disconnectBackgroundSocket();
+  });
+
+  Timer.periodic(const Duration(seconds: 20), (timer) async {
+    if (isAppInForeground) return;
+
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
-    
-    if (token != null) {
-      connectSocket(token, socketUrl);
+    if (token == null) {
+      disconnectBackgroundSocket();
+      return;
     }
 
-    service.on('connect').listen((event) async {
-      final freshPrefs = await SharedPreferences.getInstance();
-      final freshToken = freshPrefs.getString('token');
-      if (freshToken != null) {
-        connectSocket(freshToken, socketUrl);
-      }
-    });
-
-    service.on('disconnect').listen((event) {
-      debugPrint('Background Service: Disconnecting socket on request');
-      socket?.disconnect();
-      socket = null;
-    });
-
-    // periodic check to keep socket alive if disconnected
-    Timer.periodic(const Duration(seconds: 30), (timer) async {
-      final freshPrefs = await SharedPreferences.getInstance();
-      final freshToken = freshPrefs.getString('token');
-      if (freshToken == null) {
-        if (socket != null) {
-          debugPrint('Background Service: Logging out background socket');
-          socket?.disconnect();
-          socket = null;
-        }
-      } else {
-        if (socket == null || !socket!.connected) {
-          connectSocket(freshToken, socketUrl);
-        }
-      }
-    });
-
-  } catch (e, stack) {
-    debugPrint('Background Service error in initialization: $e');
-    debugPrint(stack.toString());
-  }
+    if (socket == null || !socket!.connected) {
+      await connectBackgroundSocket();
+    }
+  });
 }
 
 Future<void> initializeBackgroundService() async {
   final service = FlutterBackgroundService();
-  
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
-  // Create notifications channel for foreground service on Android
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'chetanu_bg_service_channel', // id
-    'Calculator Background Service', // title
-    description: 'Keeps calculator sync service active', // description
-    importance: Importance.low, // low importance so it is quiet
+    'chetanu_bg_service_channel',
+    'Calculator Background Service',
+    description: 'Keeps calculator sync service active',
+    importance: Importance.low,
   );
 
   await flutterLocalNotificationsPlugin
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
-  // Create notifications channel for chat updates
   const AndroidNotificationChannel chatChannel = AndroidNotificationChannel(
-    'chetanu_chat_channel', // id
-    'Chat Notifications', // title
-    description: 'Notifications for new unread chat messages', // description
-    importance: Importance.max, // high importance so it alerts the user
+    'chetanu_chat_channel',
+    'Chat Notifications',
+    description: 'Notifications for new unread chat messages',
+    importance: Importance.max,
     playSound: true,
     enableVibration: true,
   );
 
   await flutterLocalNotificationsPlugin
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(chatChannel);
 
   await service.configure(
@@ -231,6 +249,6 @@ Future<void> initializeBackgroundService() async {
       },
     ),
   );
-  
+
   await service.startService();
 }

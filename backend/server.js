@@ -28,8 +28,70 @@ const io = new Server(server, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST']
-  }
+  },
+  pingInterval: 10000,
+  pingTimeout: 5000,
+  transports: ['websocket', 'polling'],
 });
+
+// Track active socket connections per user (supports app + background handoff)
+const userConnections = new Map();
+
+function serializeMessage(doc) {
+  return {
+    _id: doc._id.toString(),
+    from: doc.from.toString(),
+    to: doc.to.toString(),
+    content: doc.content,
+    timestamp: doc.timestamp instanceof Date
+      ? doc.timestamp.toISOString()
+      : new Date(doc.timestamp).toISOString(),
+    read: doc.read ?? false,
+    clientTempId: doc.clientTempId ?? null,
+  };
+}
+
+function serializeUserStatus(userId, isOnline, lastSeen) {
+  return {
+    userId: userId.toString(),
+    isOnline,
+    lastSeen: lastSeen ? new Date(lastSeen).toISOString() : null,
+  };
+}
+
+async function setUserOnline(userId) {
+  const User = require('./models/User');
+  await User.findByIdAndUpdate(userId, { isOnline: true });
+  io.emit('user_status', serializeUserStatus(userId, true, null));
+}
+
+async function setUserOffline(userId) {
+  const User = require('./models/User');
+  const now = new Date();
+  await User.findByIdAndUpdate(userId, { isOnline: false, lastSeen: now });
+  io.emit('user_status', serializeUserStatus(userId, false, now));
+}
+
+function addUserConnection(userId, socketId) {
+  if (!userConnections.has(userId)) {
+    userConnections.set(userId, new Set());
+  }
+  const connections = userConnections.get(userId);
+  const wasOffline = connections.size === 0;
+  connections.add(socketId);
+  return wasOffline;
+}
+
+function removeUserConnection(userId, socketId) {
+  const connections = userConnections.get(userId);
+  if (!connections) return true;
+  connections.delete(socketId);
+  if (connections.size === 0) {
+    userConnections.delete(userId);
+    return true;
+  }
+  return false;
+}
 
 io.use(async (socket, next) => {
   const token = socket.handshake.auth.token;
@@ -44,45 +106,54 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', async (socket) => {
-  const userId = socket.user.id;
-  console.log(`User connected: ${userId}`);
-  
-  // Join a room unique to this user ID
+  const userId = socket.user.id.toString();
+  console.log(`User connected: ${userId} (${socket.id})`);
+
   socket.join(userId);
 
-  // Set user as online
   try {
-    const User = require('./models/User');
-    await User.findByIdAndUpdate(userId, { isOnline: true });
-    socket.broadcast.emit('user_status', { userId, isOnline: true });
+    const wasOffline = addUserConnection(userId, socket.id);
+    if (wasOffline) {
+      await setUserOnline(userId);
+    }
 
-    // Send the list of other currently online users to the newly connected user
-    const onlineUsers = await User.find({ isOnline: true }).select('_id');
+    const User = require('./models/User');
+    const onlineUsers = await User.find({ isOnline: true }).select('_id lastSeen');
     for (const onlineUser of onlineUsers) {
       const onlineUserIdStr = onlineUser._id.toString();
       if (onlineUserIdStr !== userId) {
-        socket.emit('user_status', { userId: onlineUserIdStr, isOnline: true });
+        socket.emit(
+          'user_status',
+          serializeUserStatus(onlineUserIdStr, true, onlineUser.lastSeen)
+        );
       }
     }
   } catch (err) {
     console.error('Error updating user online status:', err);
   }
 
-  socket.on('private_message', async ({ to, content }) => {
+  socket.on('private_message', async ({ to, content, clientTempId }) => {
+    if (!to || !content?.trim()) {
+      socket.emit('error', { message: 'Invalid message payload' });
+      return;
+    }
+
     try {
       const Message = require('./models/Message');
-      const message = await Message.create({ 
-        from: userId, 
-        to, 
-        content, 
-        timestamp: new Date() 
+      const message = await Message.create({
+        from: userId,
+        to: to.toString(),
+        content: content.trim(),
+        timestamp: new Date(),
       });
-      
-      // Emit to recipient's room
-      io.to(to).emit('private_message', message);
-      
-      // Emit back to all of sender's sockets/sessions
-      io.to(userId).emit('private_message', message);
+
+      const payload = serializeMessage(message);
+      if (clientTempId) {
+        payload.clientTempId = clientTempId;
+      }
+
+      io.to(to.toString()).emit('private_message', payload);
+      io.to(userId).emit('private_message', payload);
     } catch (err) {
       console.error('Error handling private message:', err);
       socket.emit('error', { message: 'Failed to send message' });
@@ -90,26 +161,32 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('typing', ({ to, isTyping }) => {
-    io.to(to).emit('typing', { from: userId, isTyping });
+    if (!to) return;
+    io.to(to.toString()).emit('typing', { from: userId, isTyping: !!isTyping });
   });
 
   socket.on('get_user_status', async ({ userId: targetUserId }) => {
+    if (!targetUserId) return;
     try {
       const User = require('./models/User');
       const targetUser = await User.findById(targetUserId).select('isOnline lastSeen');
       if (targetUser) {
-        socket.emit('user_status', { 
-          userId: targetUserId, 
-          isOnline: targetUser.isOnline ?? false, 
-          lastSeen: targetUser.lastSeen 
-        });
+        socket.emit(
+          'user_status',
+          serializeUserStatus(
+            targetUserId,
+            targetUser.isOnline ?? false,
+            targetUser.lastSeen
+          )
+        );
       }
     } catch (err) {
       console.error('Error getting user status:', err);
     }
   });
 
-  socket.on('mark_as_read', async ({ messageId, from }) => {
+  socket.on('mark_as_read', async ({ messageId }) => {
+    if (!messageId) return;
     try {
       const Message = require('./models/Message');
       await Message.updateOne({ _id: messageId }, { $set: { read: true } });
@@ -118,13 +195,26 @@ io.on('connection', async (socket) => {
     }
   });
 
-  socket.on('disconnect', async () => {
-    console.log(`User disconnected: ${userId}`);
+  socket.on('mark_chat_read', async ({ otherUserId }) => {
+    if (!otherUserId) return;
     try {
-      const User = require('./models/User');
-      const now = new Date();
-      await User.findByIdAndUpdate(userId, { isOnline: false, lastSeen: now });
-      socket.broadcast.emit('user_status', { userId, isOnline: false, lastSeen: now });
+      const Message = require('./models/Message');
+      await Message.updateMany(
+        { from: otherUserId, to: userId, read: false },
+        { $set: { read: true } }
+      );
+    } catch (err) {
+      console.error('Error marking chat as read:', err);
+    }
+  });
+
+  socket.on('disconnect', async () => {
+    console.log(`User disconnected: ${userId} (${socket.id})`);
+    try {
+      const isFullyOffline = removeUserConnection(userId, socket.id);
+      if (isFullyOffline) {
+        await setUserOffline(userId);
+      }
     } catch (err) {
       console.error('Error updating user offline status:', err);
     }

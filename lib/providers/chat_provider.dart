@@ -7,13 +7,15 @@ import '../utils/api.dart';
 
 class ChatProvider extends ChangeNotifier {
   final ApiService _apiService = ApiService();
-  
+
   List<ChatMessage> _messages = [];
   List<dynamic> _recentChats = [];
   bool _isLoading = false;
   bool _isLoadingRecent = false;
   String? _activeChatUserId;
   socket_io.Socket? _socket;
+  String? _currentUserId;
+  bool _listenersAttached = false;
   String? _token;
   bool _isOtherUserTyping = false;
   bool _isActiveUserOnline = false;
@@ -32,6 +34,171 @@ class ChatProvider extends ChangeNotifier {
     _token = token;
   }
 
+  String _id(dynamic value) => value?.toString() ?? '';
+
+  DateTime? _parseLastSeen(dynamic value) {
+    if (value == null) return null;
+    if (value is String) {
+      return DateTime.tryParse(value)?.toLocal();
+    }
+    return null;
+  }
+
+  void _applyUserStatus(String statusUserId, bool isOnline, DateTime? lastSeen) {
+    for (int i = 0; i < _recentChats.length; i++) {
+      if (_id(_recentChats[i]['_id']) == statusUserId) {
+        _recentChats[i]['isOnline'] = isOnline;
+        if (lastSeen != null) {
+          _recentChats[i]['lastSeen'] = lastSeen.toUtc().toIso8601String();
+        }
+        break;
+      }
+    }
+
+    if (_activeChatUserId == statusUserId) {
+      _isActiveUserOnline = isOnline;
+      if (lastSeen != null || isOnline) {
+        _activeUserLastSeen = isOnline ? null : (lastSeen ?? _activeUserLastSeen);
+      }
+    }
+  }
+
+  void _upsertRecentChatFromMessage(ChatMessage msg, {required bool incrementUnread}) {
+    final otherUserId = _id(msg.from) == _currentUserId ? _id(msg.to) : _id(msg.from);
+    final existingIndex = _recentChats.indexWhere(
+      (chat) => _id(chat['_id']) == otherUserId,
+    );
+
+    final preview = {
+      'lastMessage': msg.content,
+      'lastMessageAt': msg.timestamp.toUtc().toIso8601String(),
+    };
+
+    if (existingIndex >= 0) {
+      final chat = Map<String, dynamic>.from(_recentChats[existingIndex] as Map);
+      chat.addAll(preview);
+      if (incrementUnread) {
+        chat['unreadCount'] = (chat['unreadCount'] as int? ?? 0) + 1;
+      }
+      _recentChats.removeAt(existingIndex);
+      _recentChats.insert(0, chat);
+      return;
+    }
+
+    loadRecentChats();
+  }
+
+  bool _isMessageForActiveChat(ChatMessage msg) {
+    if (_activeChatUserId == null || _currentUserId == null) return false;
+    final from = _id(msg.from);
+    final to = _id(msg.to);
+    return (from == _activeChatUserId && to == _currentUserId) ||
+        (from == _currentUserId && to == _activeChatUserId);
+  }
+
+  void _addOrUpdateMessage(ChatMessage msg) {
+    final existingIndex = _messages.indexWhere((m) => m.id == msg.id);
+    if (existingIndex >= 0) {
+      _messages[existingIndex] = msg;
+      return;
+    }
+
+    final pendingIndex = _messages.indexWhere(
+      (m) =>
+          m.id.startsWith('pending_') &&
+          m.from == msg.from &&
+          m.to == msg.to &&
+          m.content == msg.content,
+    );
+    if (pendingIndex >= 0) {
+      _messages[pendingIndex] = msg;
+      return;
+    }
+
+    _messages.add(msg);
+  }
+
+  void initializeSocketListener(socket_io.Socket? socket, String currentUserId) {
+    if (socket == null) {
+      _detachSocketListeners();
+      return;
+    }
+
+    if (_socket == socket && _currentUserId == currentUserId && _listenersAttached) {
+      return;
+    }
+
+    _detachSocketListeners();
+    _socket = socket;
+    _currentUserId = currentUserId;
+    _listenersAttached = true;
+
+    _socket!.on('connect', (_) {
+      debugPrint('ChatProvider: Socket connected — syncing state');
+      if (_token != null && _activeChatUserId != null) {
+        _socket!.emit('get_user_status', {'userId': _activeChatUserId});
+        _socket!.emit('mark_chat_read', {'otherUserId': _activeChatUserId});
+        loadChatHistory(_token!, _activeChatUserId!, silent: true);
+      }
+      loadRecentChats();
+    });
+
+    _socket!.on('user_status', (data) {
+      if (data is! Map) return;
+      final statusUserId = _id(data['userId']);
+      final isOnline = data['isOnline'] == true;
+      final lastSeen = _parseLastSeen(data['lastSeen']);
+      _applyUserStatus(statusUserId, isOnline, lastSeen);
+      notifyListeners();
+    });
+
+    _socket!.on('private_message', (data) {
+      if (data is! Map) return;
+      final msg = ChatMessage.fromJson(Map<String, dynamic>.from(data));
+
+      if (_isMessageForActiveChat(msg)) {
+        _addOrUpdateMessage(msg);
+
+        if (_id(msg.from) == _activeChatUserId) {
+          _socket?.emit('mark_as_read', {'messageId': msg.id});
+          for (int i = 0; i < _recentChats.length; i++) {
+            if (_id(_recentChats[i]['_id']) == _activeChatUserId) {
+              _recentChats[i]['unreadCount'] = 0;
+              break;
+            }
+          }
+        }
+
+        notifyListeners();
+        return;
+      }
+
+      final isIncoming = _id(msg.from) != _currentUserId;
+      _upsertRecentChatFromMessage(msg, incrementUnread: isIncoming);
+      notifyListeners();
+    });
+
+    _socket!.on('typing', (data) {
+      if (data is! Map) return;
+      final fromId = _id(data['from']);
+      final isTyping = data['isTyping'] == true;
+      if (_activeChatUserId == fromId) {
+        if (_isOtherUserTyping != isTyping) {
+          _isOtherUserTyping = isTyping;
+          notifyListeners();
+        }
+      }
+    });
+  }
+
+  void _detachSocketListeners() {
+    _socket?.off('connect');
+    _socket?.off('private_message');
+    _socket?.off('typing');
+    _socket?.off('user_status');
+    _listenersAttached = false;
+  }
+
   Future<void> loadRecentChats() async {
     if (_token == null) return;
     _isLoadingRecent = true;
@@ -46,167 +213,105 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  void initializeSocketListener(socket_io.Socket? socket, String currentUserId) {
-    if (_socket == socket) return;
-    
-    // Clean up previous listeners
-    _socket?.off('connect');
-    _socket?.off('private_message');
-    _socket?.off('typing');
-    _socket?.off('user_status');
-    
-    _socket = socket;
-    if (_socket == null) return;
-
-    // Re-synchronize data on connection recovery/reconnect
-    _socket!.on('connect', (_) {
-      debugPrint('ChatProvider: Socket connected/reconnected. Syncing chat data...');
-      if (_token != null && _activeChatUserId != null) {
-        loadChatHistory(_token!, _activeChatUserId!).catchError((e) {
-          debugPrint('ChatProvider: Error syncing history on reconnect: $e');
-        });
-      }
-      loadRecentChats();
-    });
-
-    _socket!.on('user_status', (data) {
-      final statusUserId = data['userId'] as String;
-      final isOnline = data['isOnline'] as bool;
-      final lastSeenStr = data['lastSeen'] as String?;
-      
-      // Update recent chats list status in real-time
-      for (int i = 0; i < _recentChats.length; i++) {
-        if (_recentChats[i]['_id'] == statusUserId) {
-          _recentChats[i]['isOnline'] = isOnline;
-          if (lastSeenStr != null) {
-            _recentChats[i]['lastSeen'] = lastSeenStr;
-          }
-          break;
-        }
-      }
-
-      if (_activeChatUserId == statusUserId) {
-        _isActiveUserOnline = isOnline;
-        if (lastSeenStr != null) {
-          _activeUserLastSeen = DateTime.tryParse(lastSeenStr);
-        }
-        notifyListeners();
-      } else {
-        notifyListeners();
-      }
-    });
-
-    _socket!.on('private_message', (data) {
-      final msg = ChatMessage.fromJson(data as Map<String, dynamic>);
-      
-      // If the message is relevant to the active chat session
-      if (_activeChatUserId != null &&
-          ((msg.from == _activeChatUserId && msg.to == currentUserId) ||
-           (msg.from == currentUserId && msg.to == _activeChatUserId))) {
-        _messages.add(msg);
-        
-        // If we received a message in the active chat, mark it as read on the backend
-        if (msg.from == _activeChatUserId) {
-          _socket!.emit('mark_as_read', {
-            'messageId': msg.id,
-            'from': msg.from,
-          });
-        }
-        notifyListeners();
-      } else {
-        // Increment unread count in recent chats
-        bool found = false;
-        for (int i = 0; i < _recentChats.length; i++) {
-          if (_recentChats[i]['_id'] == msg.from) {
-            _recentChats[i]['unreadCount'] = (_recentChats[i]['unreadCount'] ?? 0) + 1;
-            // Bubble to the top of the list
-            final chat = _recentChats.removeAt(i);
-            _recentChats.insert(0, chat);
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          // If the user isn't in our recent list, refresh the list
-          loadRecentChats();
-        } else {
-          notifyListeners();
-        }
-      }
-    });
-
-    _socket!.on('typing', (data) {
-      final fromId = data['from'] as String;
-      final isTyping = data['isTyping'] as bool;
-      if (_activeChatUserId == fromId) {
-        _isOtherUserTyping = isTyping;
-        notifyListeners();
-      }
-    });
-  }
-
-  Future<void> loadChatHistory(String token, String otherUserId) async {
+  Future<void> loadChatHistory(
+    String token,
+    String otherUserId, {
+    bool silent = false,
+  }) async {
+    final isSameChat = _activeChatUserId == otherUserId;
     _activeChatUserId = otherUserId;
+
     if (!kIsWeb) {
       try {
         FlutterBackgroundService().invoke('setActiveChat', {'userId': otherUserId});
       } catch (_) {}
     }
-    _isOtherUserTyping = false;
-    _isActiveUserOnline = false;
-    _activeUserLastSeen = null;
 
-    // Load initial online/last seen status from recent chats list cache if present
+    _isOtherUserTyping = false;
+    if (!isSameChat) {
+      _isActiveUserOnline = false;
+      _activeUserLastSeen = null;
+    }
+
     for (final chat in _recentChats) {
-      if (chat['_id'] == otherUserId) {
+      if (_id(chat['_id']) == otherUserId) {
         _isActiveUserOnline = chat['isOnline'] as bool? ?? false;
-        final lastSeenStr = chat['lastSeen'] as String?;
-        if (lastSeenStr != null) {
-          _activeUserLastSeen = DateTime.tryParse(lastSeenStr);
-        }
+        _activeUserLastSeen = _parseLastSeen(chat['lastSeen']);
         break;
       }
     }
 
-    // Request fresh status from socket
     if (_socket != null && _socket!.connected) {
       _socket!.emit('get_user_status', {'userId': otherUserId});
+      _socket!.emit('mark_chat_read', {'otherUserId': otherUserId});
     }
 
-    _isLoading = true;
-    _messages = [];
-    notifyListeners();
+    if (!silent || !isSameChat) {
+      _isLoading = !silent;
+      if (!isSameChat) {
+        _messages = [];
+      }
+      notifyListeners();
+    }
 
     try {
       final rawMsgs = await _apiService.fetchChatHistory(token, otherUserId);
-      _messages = rawMsgs
+      final fetched = rawMsgs
           .map((m) => ChatMessage.fromJson(m as Map<String, dynamic>))
           .toList();
-      
-      // Since history marked all messages as read, clear unread count for this user in recent list
+
+      if (silent && isSameChat) {
+        final existingIds = _messages.map((m) => m.id).toSet();
+        for (final msg in fetched) {
+          if (!existingIds.contains(msg.id)) {
+            _messages.add(msg);
+          }
+        }
+        _messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      } else {
+        _messages = fetched;
+      }
+
       for (int i = 0; i < _recentChats.length; i++) {
-        if (_recentChats[i]['_id'] == otherUserId) {
+        if (_id(_recentChats[i]['_id']) == otherUserId) {
           _recentChats[i]['unreadCount'] = 0;
           break;
         }
       }
     } catch (e) {
       debugPrint('Error loading chat history: $e');
-      rethrow;
+      if (!silent) rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  void sendMessage(String content, String toUserId) {
+  void sendMessage(String content, String toUserId, String currentUserId) {
+    final trimmed = content.trim();
+    if (trimmed.isEmpty) return;
+
     if (_socket == null || !_socket!.connected) {
-      throw Exception('Socket is not connected. Can\'t send message.');
+      throw Exception('Not connected. Message will send when connection restores.');
     }
-    
+
+    final tempId = 'pending_${DateTime.now().microsecondsSinceEpoch}';
+    final optimistic = ChatMessage(
+      id: tempId,
+      from: currentUserId,
+      to: toUserId,
+      content: trimmed,
+      timestamp: DateTime.now(),
+    );
+
+    _addOrUpdateMessage(optimistic);
+    _upsertRecentChatFromMessage(optimistic, incrementUnread: false);
+    notifyListeners();
+
     _socket!.emit('private_message', {
       'to': toUserId,
-      'content': content,
+      'content': trimmed,
+      'clientTempId': tempId,
     });
   }
 
@@ -226,10 +331,7 @@ class ChatProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _socket?.off('connect');
-    _socket?.off('private_message');
-    _socket?.off('typing');
-    _socket?.off('user_status');
+    _detachSocketListeners();
     super.dispose();
   }
 }

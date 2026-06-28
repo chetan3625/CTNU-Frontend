@@ -220,20 +220,40 @@ class _HomePageState extends State<HomePage> {
       itemBuilder: (context, index) {
         final user = recentChats[index];
         final String username = user['username'] ?? 'Unknown';
-        final String userId = user['_id'] ?? '';
+        final String userId = user['_id']?.toString() ?? '';
         final int unreadCount = user['unreadCount'] as int? ?? 0;
+        final bool isOnline = user['isOnline'] as bool? ?? false;
 
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          leading: CircleAvatar(
-            backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
-            child: Text(
-              username.substring(0, 1).toUpperCase(),
-              style: TextStyle(
-                color: theme.colorScheme.primary,
-                fontWeight: FontWeight.bold,
+          leading: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              CircleAvatar(
+                backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
+                child: Text(
+                  username.substring(0, 1).toUpperCase(),
+                  style: TextStyle(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
-            ),
+              if (isOnline)
+                Positioned(
+                  right: -1,
+                  bottom: -1,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: Colors.greenAccent,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFF121212), width: 2),
+                    ),
+                  ),
+                ),
+            ],
           ),
           title: Text(
             username,
@@ -243,11 +263,17 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           subtitle: Text(
-            unreadCount > 0 ? '$unreadCount unread messages' : 'Tap to continue conversation',
+            unreadCount > 0
+                ? '$unreadCount unread messages'
+                : (isOnline ? 'Online' : 'Tap to continue conversation'),
             style: TextStyle(
-              color: unreadCount > 0 ? theme.colorScheme.secondary : Colors.white38,
+              color: unreadCount > 0
+                  ? theme.colorScheme.secondary
+                  : (isOnline ? Colors.greenAccent : Colors.white38),
               fontSize: 13,
-              fontWeight: unreadCount > 0 ? FontWeight.w500 : FontWeight.normal,
+              fontWeight: unreadCount > 0 || isOnline
+                  ? FontWeight.w500
+                  : FontWeight.normal,
             ),
           ),
           trailing: unreadCount > 0
