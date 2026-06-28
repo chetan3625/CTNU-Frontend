@@ -93,6 +93,10 @@ Future<void> main() async {
       
       // Request permission for local notifications on Android 13+
       final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+      const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/launcher_icon');
+      const initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
+      await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
       await flutterLocalNotificationsPlugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.requestNotificationsPermission();
