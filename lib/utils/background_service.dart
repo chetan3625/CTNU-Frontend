@@ -91,7 +91,6 @@ void onStart(ServiceInstance service) async {
       if (data == null) return;
       
       final from = data['from'] as String?;
-      final to = data['to'] as String?;
       
       // Load current user's ID to avoid notifying for outgoing messages
       final prefs = await SharedPreferences.getInstance();

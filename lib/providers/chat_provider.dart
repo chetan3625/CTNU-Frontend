@@ -1,5 +1,4 @@
 // lib/providers/chat_provider.dart
-import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter/foundation.dart';

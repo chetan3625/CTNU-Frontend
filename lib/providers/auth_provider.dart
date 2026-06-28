@@ -1,12 +1,11 @@
 // lib/providers/auth_provider.dart
 import 'dart:convert';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter/foundation.dart';
 
 class AuthProvider extends ChangeNotifier {
   String? _token;
