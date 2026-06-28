@@ -40,8 +40,12 @@ class _ChatPageState extends State<ChatPage> {
 
       // Fetch historical messages
       if (auth.token != null) {
-        chat.loadChatHistory(auth.token!, _otherUserId).then((_) {
-          _scrollToBottom(immediate: true);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            chat.loadChatHistory(auth.token!, _otherUserId).then((_) {
+              _scrollToBottom(immediate: true);
+            });
+          }
         });
       }
 
@@ -89,7 +93,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   String _formatLastSeen(DateTime? lastSeen) {
-    if (lastSeen == null) return 'Offline';
+    if (lastSeen == null) return 'Last seen recently';
     final now = DateTime.now();
     final diff = now.difference(lastSeen);
     if (diff.inMinutes < 1) {

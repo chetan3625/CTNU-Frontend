@@ -1,6 +1,7 @@
 // lib/providers/chat_provider.dart
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
+import 'package:flutter_background_service/flutter_background_service.dart';
 import '../models/message.dart';
 import '../utils/api.dart';
 
@@ -134,6 +135,9 @@ class ChatProvider extends ChangeNotifier {
 
   Future<void> loadChatHistory(String token, String otherUserId) async {
     _activeChatUserId = otherUserId;
+    try {
+      FlutterBackgroundService().invoke('setActiveChat', {'userId': otherUserId});
+    } catch (_) {}
     _isOtherUserTyping = false;
     _isActiveUserOnline = false;
     _activeUserLastSeen = null;
@@ -148,6 +152,11 @@ class ChatProvider extends ChangeNotifier {
         }
         break;
       }
+    }
+
+    // Request fresh status from socket
+    if (_socket != null && _socket!.connected) {
+      _socket!.emit('get_user_status', {'userId': otherUserId});
     }
 
     _isLoading = true;
@@ -189,6 +198,9 @@ class ChatProvider extends ChangeNotifier {
 
   void clearActiveChat() {
     _activeChatUserId = null;
+    try {
+      FlutterBackgroundService().invoke('setActiveChat', {'userId': null});
+    } catch (_) {}
     _isOtherUserTyping = false;
     _isActiveUserOnline = false;
     _activeUserLastSeen = null;

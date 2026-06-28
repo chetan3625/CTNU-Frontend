@@ -55,6 +55,15 @@ io.on('connection', async (socket) => {
     const User = require('./models/User');
     await User.findByIdAndUpdate(userId, { isOnline: true });
     socket.broadcast.emit('user_status', { userId, isOnline: true });
+
+    // Send the list of other currently online users to the newly connected user
+    const onlineUsers = await User.find({ isOnline: true }).select('_id');
+    for (const onlineUser of onlineUsers) {
+      const onlineUserIdStr = onlineUser._id.toString();
+      if (onlineUserIdStr !== userId) {
+        socket.emit('user_status', { userId: onlineUserIdStr, isOnline: true });
+      }
+    }
   } catch (err) {
     console.error('Error updating user online status:', err);
   }
@@ -82,6 +91,22 @@ io.on('connection', async (socket) => {
 
   socket.on('typing', ({ to, isTyping }) => {
     io.to(to).emit('typing', { from: userId, isTyping });
+  });
+
+  socket.on('get_user_status', async ({ userId: targetUserId }) => {
+    try {
+      const User = require('./models/User');
+      const targetUser = await User.findById(targetUserId).select('isOnline lastSeen');
+      if (targetUser) {
+        socket.emit('user_status', { 
+          userId: targetUserId, 
+          isOnline: targetUser.isOnline ?? false, 
+          lastSeen: targetUser.lastSeen 
+        });
+      }
+    } catch (err) {
+      console.error('Error getting user status:', err);
+    }
   });
 
   socket.on('mark_as_read', async ({ messageId, from }) => {

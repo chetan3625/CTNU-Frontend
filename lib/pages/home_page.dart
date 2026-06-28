@@ -26,7 +26,11 @@ class _HomePageState extends State<HomePage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_recentChatsLoaded) {
-      Provider.of<ChatProvider>(context, listen: false).loadRecentChats();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Provider.of<ChatProvider>(context, listen: false).loadRecentChats();
+        }
+      });
       _recentChatsLoaded = true;
     }
   }

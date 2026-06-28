@@ -36,6 +36,8 @@ router.get('/recent', verifyToken, async (req, res) => {
         _id: u._id,
         username: u.username,
         email: u.email,
+        isOnline: u.isOnline,
+        lastSeen: u.lastSeen,
         unreadCount
       });
     }
