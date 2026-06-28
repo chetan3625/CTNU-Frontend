@@ -14,6 +14,7 @@ import 'pages/calculator_page.dart';
 import 'utils/api.dart';
 import 'utils/background_service.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter/foundation.dart';
 
 @pragma('vm:entry-point')
 void callbackDispatcher() {
@@ -85,35 +86,37 @@ Future<void> main() async {
     debugPrint('No .env file found; continuing with defaults.');
   }
 
-  // Initialize Background Service
-  try {
-    await initializeBackgroundService();
-    
-    // Request permission for local notifications on Android 13+
-    final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-    await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
-  } catch (e) {
-    debugPrint('Failed to initialize background service or request permissions: $e');
-  }
+  if (!kIsWeb) {
+    // Initialize Background Service
+    try {
+      await initializeBackgroundService();
+      
+      // Request permission for local notifications on Android 13+
+      final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+      await flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+          ?.requestNotificationsPermission();
+    } catch (e) {
+      debugPrint('Failed to initialize background service or request permissions: $e');
+    }
 
-  // Initialize Workmanager background synchronization
-  try {
-    await Workmanager().initialize(
-      callbackDispatcher,
-      isInDebugMode: false,
-    );
-    await Workmanager().registerPeriodicTask(
-      "chetanu_bg_sync",
-      "fetch_unread_messages",
-      frequency: const Duration(minutes: 15),
-      constraints: Constraints(
-        networkType: NetworkType.connected,
-      ),
-    );
-  } catch (e) {
-    debugPrint('Failed to initialize Workmanager: $e');
+    // Initialize Workmanager background synchronization
+    try {
+      await Workmanager().initialize(
+        callbackDispatcher,
+        isInDebugMode: false,
+      );
+      await Workmanager().registerPeriodicTask(
+        "chetanu_bg_sync",
+        "fetch_unread_messages",
+        frequency: const Duration(minutes: 15),
+        constraints: Constraints(
+          networkType: NetworkType.connected,
+        ),
+      );
+    } catch (e) {
+      debugPrint('Failed to initialize Workmanager: $e');
+    }
   }
 
   runApp(const MyApp());
@@ -272,6 +275,7 @@ class _LifecycleObserverState extends State<LifecycleObserver> with WidgetsBindi
   }
 
   void _updateLifecycle(bool isForeground) {
+    if (kIsWeb) return;
     try {
       FlutterBackgroundService().invoke('setAppLifecycle', {'isForeground': isForeground});
     } catch (e) {

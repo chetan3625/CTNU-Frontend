@@ -6,6 +6,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter/foundation.dart';
 
 class AuthProvider extends ChangeNotifier {
   String? _token;
@@ -47,9 +48,11 @@ class AuthProvider extends ChangeNotifier {
       
       if (_token != null) {
         _connectSocket();
-        try {
-          FlutterBackgroundService().invoke('connect');
-        } catch (_) {}
+        if (!kIsWeb) {
+          try {
+            FlutterBackgroundService().invoke('connect');
+          } catch (_) {}
+        }
         notifyListeners();
       }
     } catch (e) {
@@ -81,9 +84,11 @@ class AuthProvider extends ChangeNotifier {
     _userId = data['user']['id'];
     _username = data['user']['username'];
     _connectSocket();
-    try {
-      FlutterBackgroundService().invoke('connect');
-    } catch (_) {}
+    if (!kIsWeb) {
+      try {
+        FlutterBackgroundService().invoke('connect');
+      } catch (_) {}
+    }
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -117,9 +122,11 @@ class AuthProvider extends ChangeNotifier {
     _userId = data['user']['id'];
     _username = data['user']['username'];
     _connectSocket();
-    try {
-      FlutterBackgroundService().invoke('connect');
-    } catch (_) {}
+    if (!kIsWeb) {
+      try {
+        FlutterBackgroundService().invoke('connect');
+      } catch (_) {}
+    }
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -139,9 +146,11 @@ class AuthProvider extends ChangeNotifier {
     _username = null;
     _socket?.dispose();
     _socket = null;
-    try {
-      FlutterBackgroundService().invoke('disconnect');
-    } catch (_) {}
+    if (!kIsWeb) {
+      try {
+        FlutterBackgroundService().invoke('disconnect');
+      } catch (_) {}
+    }
 
     try {
       final prefs = await SharedPreferences.getInstance();
