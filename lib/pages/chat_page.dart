@@ -5,6 +5,7 @@ import 'dart:async';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../models/message.dart';
+import '../widgets/chat_emoji_picker.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
@@ -16,9 +17,12 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _textScrollController = ScrollController();
+  final FocusNode _focusNode = FocusNode();
 
   Timer? _typingTimer;
   bool _isTyping = false;
+  bool _emojiShowing = false;
   bool _initialized = false;
   late String _otherUserId;
   late String _otherUsername;
@@ -62,8 +66,28 @@ class _ChatPageState extends State<ChatPage> {
     } catch (_) {}
 
     _scrollController.dispose();
+    _textScrollController.dispose();
+    _focusNode.dispose();
     _messageController.dispose();
     super.dispose();
+  }
+
+  void _toggleEmojiPicker() {
+    setState(() {
+      _emojiShowing = !_emojiShowing;
+      if (_emojiShowing) {
+        _focusNode.unfocus();
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _focusNode.requestFocus();
+        });
+      }
+    });
+  }
+
+  void _hideEmojiPicker() {
+    if (!_emojiShowing) return;
+    setState(() => _emojiShowing = false);
   }
 
   void _onTextChanged(String text) {
@@ -135,6 +159,7 @@ class _ChatPageState extends State<ChatPage> {
     try {
       chat.sendMessage(text, _otherUserId, auth.userId!);
       _messageController.clear();
+      _hideEmojiPicker();
       _scrollToBottom();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -339,37 +364,77 @@ class _ChatPageState extends State<ChatPage> {
         border: Border(top: BorderSide(color: Color(0xFF2C2C2C))),
       ),
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _messageController,
-                  onChanged: _onTextChanged,
-                  decoration: const InputDecoration(
-                    hintText: 'Type a message...',
-                    fillColor: Color(0xFF121212),
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  IconButton(
+                    onPressed: _toggleEmojiPicker,
+                    icon: Icon(
+                      _emojiShowing
+                          ? Icons.keyboard_rounded
+                          : Icons.emoji_emotions_outlined,
+                      color: Colors.white54,
+                    ),
+                    tooltip: _emojiShowing ? 'Keyboard' : 'Emoji',
                   ),
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => _sendMessage(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              CircleAvatar(
-                backgroundColor: theme.colorScheme.primary,
-                radius: 24,
-                child: IconButton(
-                  icon: const Icon(
-                    Icons.send_rounded,
-                    color: Colors.white,
-                    size: 20,
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF121212),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: const Color(0xFF2C2C2C)),
+                      ),
+                      child: TextField(
+                        controller: _messageController,
+                        focusNode: _focusNode,
+                        scrollController: _textScrollController,
+                        onChanged: _onTextChanged,
+                        onTap: _hideEmojiPicker,
+                        minLines: 1,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          hintText: 'Type a message...',
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          filled: false,
+                        ),
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _sendMessage(),
+                      ),
+                    ),
                   ),
-                  onPressed: _sendMessage,
-                ),
+                  const SizedBox(width: 8),
+                  CircleAvatar(
+                    backgroundColor: theme.colorScheme.primary,
+                    radius: 24,
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.send_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      onPressed: _sendMessage,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            if (_emojiShowing)
+              ChatEmojiPicker(
+                textController: _messageController,
+                scrollController: _textScrollController,
+                onEmojiSelected: () => _onTextChanged(_messageController.text),
+              ),
+          ],
         ),
       ),
     );
