@@ -97,6 +97,20 @@ Future<void> main() async {
       const initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
       await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
+      // Create notification channel for chat updates
+      const AndroidNotificationChannel chatChannel = AndroidNotificationChannel(
+        'chetanu_chat_channel',
+        'Chat Notifications',
+        description: 'Notifications for new unread chat messages',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+      );
+
+      await flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(chatChannel);
+
       await flutterLocalNotificationsPlugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.requestNotificationsPermission();

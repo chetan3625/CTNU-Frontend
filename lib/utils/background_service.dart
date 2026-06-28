@@ -185,6 +185,8 @@ void onStart(ServiceInstance service) async {
 Future<void> initializeBackgroundService() async {
   final service = FlutterBackgroundService();
   
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
   // Create notifications channel for foreground service on Android
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'chetanu_bg_service_channel', // id
@@ -193,11 +195,23 @@ Future<void> initializeBackgroundService() async {
     importance: Importance.low, // low importance so it is quiet
   );
 
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
+
+  // Create notifications channel for chat updates
+  const AndroidNotificationChannel chatChannel = AndroidNotificationChannel(
+    'chetanu_chat_channel', // id
+    'Chat Notifications', // title
+    description: 'Notifications for new unread chat messages', // description
+    importance: Importance.max, // high importance so it alerts the user
+    playSound: true,
+    enableVibration: true,
+  );
+
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(chatChannel);
 
   await service.configure(
     androidConfiguration: AndroidConfiguration(
