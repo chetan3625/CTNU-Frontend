@@ -41,7 +41,7 @@ void callbackDispatcher() {
       final lastTotalUnread = prefs.getInt('last_total_unread') ?? 0;
       if (totalUnread > lastTotalUnread) {
         final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-        const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+        const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/launcher_icon');
         const initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
         
         await flutterLocalNotificationsPlugin.initialize(initializationSettings);

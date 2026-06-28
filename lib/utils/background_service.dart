@@ -14,7 +14,7 @@ void onStart(ServiceInstance service) async {
 
   final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   try {
-    const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/launcher_icon');
     const initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
     await flutterLocalNotificationsPlugin.initialize(initializationSettings);
     debugPrint('Background Service: Notifications initialized successfully');
