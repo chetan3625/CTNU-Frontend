@@ -68,7 +68,7 @@ void onStart(ServiceInstance service) async {
       socket_io.OptionBuilder()
           .setTransports(['websocket', 'polling'])
           .setAuth({'token': token})
-          .disableAutoConnect()
+          .enableReconnection()
           .build(),
     );
     

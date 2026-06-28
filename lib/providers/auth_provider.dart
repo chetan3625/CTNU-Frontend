@@ -181,9 +181,6 @@ class AuthProvider extends ChangeNotifier {
           .setTransports(['websocket', 'polling'])
           .setAuth({'token': _token})
           .enableReconnection()
-          .setReconnectionDelay(1000)
-          .setReconnectionMaxDelay(5000)
-          .setReconnectionAttempts(99999)
           .build(),
     );
     _socket!.connect();
