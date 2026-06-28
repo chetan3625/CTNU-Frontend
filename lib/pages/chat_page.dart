@@ -22,6 +22,7 @@ class _ChatPageState extends State<ChatPage> {
   bool _initialized = false;
   late String _otherUserId;
   late String _otherUsername;
+  int _lastMessageCount = 0;
 
   @override
   void didChangeDependencies() {
@@ -43,14 +44,13 @@ class _ChatPageState extends State<ChatPage> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             chat.loadChatHistory(auth.token!, _otherUserId).then((_) {
+              _lastMessageCount = chat.messages.length;
               _scrollToBottom(immediate: true);
             });
           }
         });
       }
 
-      // Listen to future message updates to scroll down
-      chat.addListener(_scrollToBottom);
       _initialized = true;
     }
   }
@@ -61,7 +61,6 @@ class _ChatPageState extends State<ChatPage> {
     // Avoid accessing provider if context is no longer active, but we can safely access listen:false
     try {
       final chat = Provider.of<ChatProvider>(context, listen: false);
-      chat.removeListener(_scrollToBottom);
       chat.clearActiveChat();
     } catch (_) {}
 
@@ -151,6 +150,15 @@ class _ChatPageState extends State<ChatPage> {
     final auth = Provider.of<AuthProvider>(context, listen: false);
     final chat = Provider.of<ChatProvider>(context);
     final theme = Theme.of(context);
+
+    // Auto-scroll when new messages arrive
+    if (chat.messages.length != _lastMessageCount) {
+      final isNewMessageAdded = chat.messages.length > _lastMessageCount;
+      _lastMessageCount = chat.messages.length;
+      if (isNewMessageAdded) {
+        _scrollToBottom();
+      }
+    }
  
     return Scaffold(
       appBar: AppBar(
