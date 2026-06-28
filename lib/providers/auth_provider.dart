@@ -168,7 +168,7 @@ class AuthProvider extends ChangeNotifier {
     _socket = socket_io.io(
       _socketUrl,
       socket_io.OptionBuilder()
-          .setTransports(['websocket'])
+          .setTransports(['websocket', 'polling'])
           .setAuth({'token': _token})
           .disableAutoConnect()
           .build(),
