@@ -96,16 +96,18 @@ class _ChatPageState extends State<ChatPage> {
     if (lastSeen == null) return 'Last seen recently';
     final now = DateTime.now();
     final diff = now.difference(lastSeen);
+    
     if (diff.inMinutes < 1) {
       return 'Last seen just now';
     } else if (diff.inHours < 1) {
-      return 'Last seen ${diff.inMinutes}m ago';
+      final mins = diff.inMinutes;
+      return 'Last seen $mins ${mins == 1 ? 'minute' : 'minutes'} ago';
     } else if (diff.inDays < 1) {
-      final hour = lastSeen.hour.toString().padLeft(2, '0');
-      final minute = lastSeen.minute.toString().padLeft(2, '0');
-      return 'Last seen today at $hour:$minute';
+      final hrs = diff.inHours;
+      return 'Last seen $hrs ${hrs == 1 ? 'hour' : 'hours'} ago';
     } else {
-      return 'Last seen ${diff.inDays}d ago';
+      final days = diff.inDays;
+      return 'Last seen $days ${days == 1 ? 'day' : 'days'} ago';
     }
   }
 
