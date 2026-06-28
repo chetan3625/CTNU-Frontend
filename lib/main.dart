@@ -300,32 +300,23 @@ class _LifecycleObserverState extends State<LifecycleObserver> with WidgetsBindi
         _updateLifecycle(true);
         break;
 
-      // App is being destroyed or fully hidden — go offline immediately.
-      case AppLifecycleState.detached:
-      case AppLifecycleState.hidden:
-        _goOffline();
-        break;
-
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
-        _updateLifecycle(false);
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        _setPresenceOffline();
         break;
     }
   }
 
-  void _goOffline() {
+  /// Drops the presence socket (shows offline) but keeps the notify-only
+  /// background socket alive so "You Have new Calculations." still arrives.
+  void _setPresenceOffline() {
     _updateLifecycle(false);
     try {
       Provider.of<AuthProvider>(context, listen: false).disconnectSocket();
     } catch (e) {
-      debugPrint('LifecycleObserver: Error disconnecting socket: $e');
-    }
-    if (!kIsWeb) {
-      try {
-        FlutterBackgroundService().invoke('disconnect');
-      } catch (e) {
-        debugPrint('LifecycleObserver: Error notifying background service: $e');
-      }
+      debugPrint('LifecycleObserver: Error disconnecting presence socket: $e');
     }
   }
 

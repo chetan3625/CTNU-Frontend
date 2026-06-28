@@ -3,6 +3,7 @@ const router = express.Router();
 const Message = require('../models/Message');
 const { verifyToken } = require('../middleware/auth');
 const User = require('../models/User');
+const { isUserConnected } = require('../presence');
 
 // Get recent chats (users the current user has chatted with)
 router.get('/recent', verifyToken, async (req, res) => {
@@ -36,7 +37,7 @@ router.get('/recent', verifyToken, async (req, res) => {
         _id: u._id,
         username: u.username,
         email: u.email,
-        isOnline: u.isOnline,
+        isOnline: isUserConnected(u._id.toString()),
         lastSeen: u.lastSeen,
         unreadCount
       });

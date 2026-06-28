@@ -12,6 +12,11 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const chatRoutes = require('./routes/chat');
 const { verifyToken } = require('./middleware/auth');
+const {
+  addUserConnection,
+  removeUserConnection,
+  isUserConnected,
+} = require('./presence');
 
 const app = express();
 app.use(cors());
@@ -33,9 +38,6 @@ const io = new Server(server, {
   pingTimeout: 5000,
   transports: ['websocket', 'polling'],
 });
-
-// Track active socket connections per user (supports app + background handoff)
-const userConnections = new Map();
 
 function serializeMessage(doc) {
   return {
@@ -72,32 +74,6 @@ async function setUserOffline(userId) {
   io.emit('user_status', serializeUserStatus(userId, false, now));
 }
 
-function addUserConnection(userId, socketId) {
-  if (!userConnections.has(userId)) {
-    userConnections.set(userId, new Set());
-  }
-  const connections = userConnections.get(userId);
-  const wasOffline = connections.size === 0;
-  connections.add(socketId);
-  return wasOffline;
-}
-
-function removeUserConnection(userId, socketId) {
-  const connections = userConnections.get(userId);
-  if (!connections) return true;
-  connections.delete(socketId);
-  if (connections.size === 0) {
-    userConnections.delete(userId);
-    return true;
-  }
-  return false;
-}
-
-function isUserConnected(userId) {
-  const connections = userConnections.get(userId.toString());
-  return connections != null && connections.size > 0;
-}
-
 async function resetStaleOnlineStatus() {
   try {
     const User = require('./models/User');
@@ -130,6 +106,7 @@ io.use(async (socket, next) => {
   try {
     const payload = await verifyToken(token);
     socket.user = payload;
+    socket.notifyOnly = socket.handshake.auth.notifyOnly === true;
     next();
   } catch (e) {
     next(new Error('Authentication error'));
@@ -138,9 +115,18 @@ io.use(async (socket, next) => {
 
 io.on('connection', async (socket) => {
   const userId = socket.user.id.toString();
-  console.log(`User connected: ${userId} (${socket.id})`);
-
   socket.join(userId);
+
+  // Notification-only connections receive messages but never affect online status.
+  if (socket.notifyOnly) {
+    console.log(`Notify-only connected: ${userId} (${socket.id})`);
+    socket.on('disconnect', () => {
+      console.log(`Notify-only disconnected: ${userId} (${socket.id})`);
+    });
+    return;
+  }
+
+  console.log(`User connected: ${userId} (${socket.id})`);
 
   try {
     const wasOffline = addUserConnection(userId, socket.id);

@@ -42,6 +42,11 @@ class AuthProvider extends ChangeNotifier {
 
       if (_token != null) {
         _connectSocket();
+        if (!kIsWeb) {
+          try {
+            FlutterBackgroundService().invoke('connect');
+          } catch (_) {}
+        }
         notifyListeners();
       }
     } catch (e) {
@@ -105,6 +110,12 @@ class AuthProvider extends ChangeNotifier {
     _username = username;
     _connectSocket();
 
+    if (!kIsWeb) {
+      try {
+        FlutterBackgroundService().invoke('connect');
+      } catch (_) {}
+    }
+
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('token', token);
@@ -161,9 +172,12 @@ class AuthProvider extends ChangeNotifier {
 
   void _disconnectSocket() {
     _isSocketConnected = false;
-    _socket?.clearListeners();
-    _socket?.dispose();
+    final socket = _socket;
     _socket = null;
+    if (socket == null) return;
+    socket.clearListeners();
+    socket.disconnect();
+    socket.dispose();
   }
 
   void _connectSocket() {
