@@ -37,6 +37,7 @@ void callbackDispatcher() {
           unreadSenders.add(chat['username'] as String? ?? 'Unknown');
         }
       }
+      
 
       final lastTotalUnread = prefs.getInt('last_total_unread') ?? 0;
       if (totalUnread > lastTotalUnread) {
