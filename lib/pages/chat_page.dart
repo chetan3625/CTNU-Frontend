@@ -320,39 +320,43 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _buildMessageInput(ThemeData theme) {
     return Container(
-      padding: const EdgeInsets.all(12),
       decoration: const BoxDecoration(
         color: Color(0xFF1F1F1F),
         border: Border(top: BorderSide(color: Color(0xFF2C2C2C))),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              onChanged: _onTextChanged,
-              decoration: const InputDecoration(
-                hintText: 'Type a message...',
-                fillColor: Color(0xFF121212),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _messageController,
+                  onChanged: _onTextChanged,
+                  decoration: const InputDecoration(
+                    hintText: 'Type a message...',
+                    fillColor: Color(0xFF121212),
+                  ),
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _sendMessage(),
+                ),
               ),
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _sendMessage(),
-            ),
-          ),
-          const SizedBox(width: 8),
-          CircleAvatar(
-            backgroundColor: theme.colorScheme.primary,
-            radius: 24,
-            child: IconButton(
-              icon: const Icon(
-                Icons.send_rounded,
-                color: Colors.white,
-                size: 20,
+              const SizedBox(width: 8),
+              CircleAvatar(
+                backgroundColor: theme.colorScheme.primary,
+                radius: 24,
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.send_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  onPressed: _sendMessage,
+                ),
               ),
-              onPressed: _sendMessage,
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
