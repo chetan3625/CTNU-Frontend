@@ -1,4 +1,6 @@
 const jwt = require('jsonwebtoken');
+const { verifyAccessTokenString } = require('../utils/tokens');
+
 const secret = process.env.JWT_SECRET || 'your_jwt_secret';
 
 function signToken(payload) {
@@ -7,16 +9,9 @@ function signToken(payload) {
 
 function verifyToken(req, res, next) {
   if (typeof req === 'string') {
-    const token = req;
-    return new Promise((resolve, reject) => {
-      jwt.verify(token, secret, (err, decoded) => {
-        if (err) return reject(err);
-        resolve(decoded);
-      });
-    });
+    return verifyAccessTokenString(req);
   }
 
-  // Express middleware usage
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -26,7 +21,7 @@ function verifyToken(req, res, next) {
 
   jwt.verify(token, secret, (err, decoded) => {
     if (err) {
-      return res.status(403).json({ message: 'Invalid or expired token' });
+      return res.status(401).json({ message: 'Invalid or expired access token' });
     }
     req.user = decoded;
     next();

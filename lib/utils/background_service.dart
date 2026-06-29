@@ -6,6 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'token_service.dart';
 
 String _socketUrlFromEnv() {
   try {
@@ -105,8 +106,7 @@ void onStart(ServiceInstance service) async {
   }
 
   Future<void> connectNotifySocket() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    final token = await TokenService.getValidAccessToken();
     if (token == null) {
       disconnectNotifySocket();
       return;
@@ -188,8 +188,7 @@ void onStart(ServiceInstance service) async {
   Timer.periodic(const Duration(seconds: 20), (timer) async {
     if (isAppInForeground) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+    final token = await TokenService.getValidAccessToken();
     if (token == null) {
       disconnectNotifySocket();
       return;

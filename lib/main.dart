@@ -13,6 +13,7 @@ import 'pages/chat_page.dart';
 import 'pages/calculator_page.dart';
 import 'utils/api.dart';
 import 'utils/background_service.dart';
+import 'utils/token_service.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter/foundation.dart';
 
@@ -21,12 +22,16 @@ void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     try {
       WidgetsFlutterBinding.ensureInitialized();
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token');
+      try {
+        await dotenv.load(fileName: '.env');
+      } catch (_) {}
+
+      final token = await TokenService.getValidAccessToken();
       if (token == null) return true;
 
       final apiService = ApiService();
       final recentChats = await apiService.fetchRecentChats(token);
+      final prefs = await SharedPreferences.getInstance();
       
       int totalUnread = 0;
       List<String> unreadSenders = [];
@@ -142,17 +147,26 @@ Future<void> main() async {
     }
   }
 
-  runApp(const MyApp());
+  final authProvider = AuthProvider();
+  await authProvider.tryAutoLogin();
+  ApiService.configureAuth(
+    accessTokenResolver: authProvider.getValidAccessToken,
+    refreshSession: authProvider.refreshAccessToken,
+  );
+
+  runApp(MyApp(authProvider: authProvider));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final AuthProvider authProvider;
+
+  const MyApp({super.key, required this.authProvider});
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
         ChangeNotifierProxyProvider<AuthProvider, ChatProvider>(
           create: (_) => ChatProvider(),
           update: (_, auth, chat) {
@@ -297,8 +311,13 @@ class _LifecycleObserverState extends State<LifecycleObserver> with WidgetsBindi
       case AppLifecycleState.resumed:
         try {
           final authProvider = Provider.of<AuthProvider>(context, listen: false);
-          authProvider.connectSocket();
-          Provider.of<ChatProvider>(context, listen: false).loadRecentChats();
+          final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+          authProvider.getValidAccessToken().then((token) {
+            if (token != null) {
+              authProvider.connectSocket();
+              chatProvider.loadRecentChats();
+            }
+          });
         } catch (e) {
           debugPrint('LifecycleObserver: Error reconnecting on resume: $e');
         }
